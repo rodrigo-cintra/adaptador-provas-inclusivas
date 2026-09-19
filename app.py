@@ -7,6 +7,11 @@ import difflib
 import requests
 import streamlit as st
 from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 st.set_page_config(
     page_title="Adaptador Acadêmico Inclusivo",
@@ -17,7 +22,7 @@ st.set_page_config(
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva, gerará os cadernos adaptados, os gabaritos orientados e o guia de aplicação em um único pacote consolidado.
+cognitiva, gerará os cadernos adaptados, as rubricas analíticas aprofundadas e o guia de aplicação em um único pacote consolidado.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -86,7 +91,7 @@ def substituir_em_paragrafo(paragrafo, texto_antigo: str, texto_novo: str) -> bo
 
     return False
 
-def extrair_pares_seguro(bloco_bruto):
+def extrair_dados_perfil(bloco_bruto):
     dados = None
     if isinstance(bloco_bruto, dict) and "conteudo" in bloco_bruto:
         bloco_bruto = bloco_bruto["conteudo"]
@@ -111,27 +116,34 @@ def extrair_pares_seguro(bloco_bruto):
     elif isinstance(bloco_bruto, (list, dict)):
         dados = bloco_bruto
 
-    if isinstance(dados, dict):
+    itens_adaptados = []
+    if isinstance(dados, list):
+        itens_adaptados = dados
+    elif isinstance(dados, dict):
         for k in ["adaptacoes", "questoes_adaptadas", "questoes", "conteudo", "result"]:
-            if k in dados and isinstance(dados[k], (list, str)):
-                if isinstance(dados[k], str):
-                    return extrair_pares_seguro(dados[k])
-                dados = dados[k]
+            if k in dados and isinstance(dados[k], list):
+                itens_adaptados = dados[k]
                 break
-        if isinstance(dados, dict):
-            dados = [dados]
+        if not itens_adaptados and ("texto_original" in dados or "original" in dados):
+            itens_adaptados = [dados]
 
     pares = []
-    if isinstance(dados, list):
-        for elem in dados:
-            if not isinstance(elem, dict):
-                continue
-            orig = elem.get("texto_original") or elem.get("enunciado_original") or elem.get("original") or ""
-            adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
-            orig_s = str(orig).strip()
-            adapt_s = str(adapt).strip()
-            if orig_s and adapt_s:
-                pares.append({"original": orig_s, "adaptado": adapt_s})
+    for elem in itens_adaptados:
+        if not isinstance(elem, dict):
+            continue
+        orig = elem.get("texto_original") or elem.get("enunciado_original") or elem.get("original") or ""
+        adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
+        num = elem.get("numero_item") or elem.get("item") or len(pares) + 1
+        
+        orig_s = str(orig).strip()
+        adapt_s = str(adapt).strip()
+        if orig_s and adapt_s:
+            pares.append({
+                "numero": num,
+                "original": orig_s,
+                "adaptado": adapt_s,
+                "dados_completos": elem
+            })
     return pares
 
 def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
@@ -148,7 +160,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
             if substituir_em_paragrafo(p, original, adaptado):
                 substituido = True
                 total_substituicoes += 1
-                relatorio.append(f"Substituido: {original[:40]}...")
+                relatorio.append(f"Substituído: {original[:40]}...")
                 break
 
         if not substituido:
@@ -159,7 +171,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
                             if substituir_em_paragrafo(p, original, adaptado):
                                 substituido = True
                                 total_substituicoes += 1
-                                relatorio.append(f"Substituido em tabela: {original[:40]}...")
+                                relatorio.append(f"Substituído em tabela: {original[:40]}...")
                                 break
                         if substituido:
                             break
@@ -169,28 +181,274 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
                     break
 
         if not substituido:
-            relatorio.append(f"Nao localizado: {original[:40]}...")
+            relatorio.append(f"Não localizado: {original[:40]}...")
 
     buffer_saida = io.BytesIO()
     doc.save(buffer_saida)
     buffer_saida.seek(0)
     return buffer_saida, total_substituicoes, relatorio
 
-def gerar_documento_texto(titulo: str, secoes: dict) -> io.BytesIO:
-    doc = Document()
-    doc.add_heading(titulo, level=1)
-    for subtitulo, conteudo in secoes.items():
-        doc.add_heading(subtitulo, level=2)
-        if isinstance(conteudo, list):
-            for item in conteudo:
-                doc.add_paragraph(str(item), style='List Bullet')
-        elif isinstance(conteudo, dict):
-            for k, v in conteudo.items():
-                p = doc.add_paragraph()
-                p.add_run(f"{k}: ").bold = True
-                p.add_run(str(v))
+def definir_celula_fundo(celula, hex_color):
+    tcPr = celula._element.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), hex_color)
+    tcPr.append(shd)
+
+def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
+    dados = item_par.get("dados_completos", {})
+    texto = item_par.get("original", "").lower()
+    
+    # Detecção taxonômica inferida por verbos de comando se não vier no JSON
+    nivel_bloom = dados.get("bloom") or dados.get("nivel_cognitivo")
+    if not nivel_bloom:
+        if any(v in texto for v in ["avalie", "julgue", "critique", "defenda"]):
+            nivel_bloom = "Avaliar (Nível 5)"
+        elif any(v in texto for v in ["analise", "compare", "diferencie", "relacione"]):
+            nivel_bloom = "Analisar (Nível 4)"
+        elif any(v in texto for v in ["aplique", "calcule", "resolva", "demonstre"]):
+            nivel_bloom = "Aplicar (Nível 3)"
+        elif any(v in texto for v in ["explique", "caracterize", "descreva", "discuta"]):
+            nivel_bloom = "Compreender (Nível 2)"
         else:
-            doc.add_paragraph(str(conteudo))
+            nivel_bloom = "Lembrar / Identificar (Nível 1)"
+
+    barreira = "Sobrecarga de memória operacional e dispersão atencional decorrente de enunciado denso."
+    ajuste = "Segmentação em comandos unitários com destaque visual nos verbos de ação para orientar o foco executivo."
+    criterio_perfil = "Aceitar respostas sintéticas e estruturadas em tópicos. Priorizar a precisão do conceito sobre o volume textual."
+
+    if "TEA" in perfil_id.upper():
+        barreira = "Ambiguidade na interpretação de comandos múltiplos e esforço excessivo com linguagem implícita ou figurada."
+        ajuste = "Linearização da ordem dos comandos, uso de termos diretos e eliminação de duplos sentidos nas premissas."
+        criterio_perfil = "Valorizar respostas literais e diretas. Não exigir floreios discursivos ou inferências não explícitas no comando."
+
+    return {
+        "bloom": nivel_bloom,
+        "barreira": dados.get("barreira_enfrentada") or barreira,
+        "ajuste": dados.get("justificativa_acessibilidade") or ajuste,
+        "criterio_perfil": dados.get("criterio_especifico") or criterio_perfil
+    }
+
+def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io.BytesIO:
+    doc = Document()
+    
+    # Configuração de margens
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
+        section.left_margin = Inches(1.0)
+        section.right_margin = Inches(1.0)
+
+    # Título Principal
+    p_title = doc.add_paragraph()
+    run_title = p_title.add_run(f"Gabarito Orientado & Matriz de Correção Analítica")
+    run_title.font.name = 'Calibri'
+    run_title.font.size = Pt(20)
+    run_title.font.bold = True
+    run_title.font.color.rgb = RGBColor(24, 43, 73)
+    p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    p_sub = doc.add_paragraph()
+    run_sub = p_sub.add_run(f"Instrumento Técnico de Avaliação Diferenciada | Perfil de Referência: {perfil_id}")
+    run_sub.font.name = 'Calibri'
+    run_sub.font.size = Pt(11)
+    run_sub.font.italic = True
+    run_sub.font.color.rgb = RGBColor(80, 80, 80)
+    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
+    # Quadro de Fundamentação Pedagógica
+    doc.add_heading("1. Fundamentação Pedagógica & Princípios Avaliativos", level=1)
+    p_fund = doc.add_paragraph(
+        "Este documento estabelece a matriz de correção técnica para o caderno adaptado, assegurando o princípio "
+        "da equivalência cognitiva preconizado pelo Desenho Universal para a Aprendizagem (DUA) e pelas diretrizes "
+        "institucionais de acessibilidade acadêmica. A adaptação visa eliminar barreiras instrumentais de acesso "
+        "ao enunciado, mantendo integral o construto avaliativo e o rigor conceitual esperado para o componente curricular."
+    )
+    p_fund.paragraph_format.line_spacing = 1.15
+    p_fund.paragraph_format.space_after = Pt(14)
+
+    # Matriz Analítica por Questão
+    doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
+
+    for idx, par in enumerate(lista_pares):
+        num = par.get("numero", idx + 1)
+        meta = inferir_metadados_psicometricos(par, perfil_id)
+
+        h2 = doc.add_heading(f"Item #{num} — Análise Cognitiva & Parâmetros de Desempenho", level=2)
+        h2.paragraph_format.space_before = Pt(16)
+        h2.paragraph_format.space_after = Pt(6)
+
+        # Tabela Estruturada do Item
+        tabela = doc.add_table(rows=6, cols=2)
+        tabela.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tabela.autofit = False
+
+        largura_rotulo = Inches(2.0)
+        largura_conteudo = Inches(4.5)
+
+        dados_tabela = [
+            ("Nível Taxonômico (Bloom):", meta["bloom"]),
+            ("Enunciado Original:", par["original"]),
+            ("Enunciado Adaptado:", par["adaptado"]),
+            ("Barreira Instrumental Mitigada:", meta["barreira"]),
+            ("Intervenção Didática Aplicada:", meta["ajuste"]),
+            ("Diretriz Específica para o Docente:", meta["criterio_perfil"])
+        ]
+
+        for i, (rotulo, valor) in enumerate(dados_tabela):
+            linha = tabela.rows[i]
+            
+            c_rotulo = linha.cells[0]
+            c_rotulo.width = largura_rotulo
+            p_r = c_rotulo.paragraphs[0]
+            r_run = p_r.add_run(rotulo)
+            r_run.font.name = 'Calibri'
+            r_run.font.size = Pt(10)
+            r_run.font.bold = True
+            r_run.font.color.rgb = RGBColor(30, 30, 30)
+            definir_celula_fundo(c_rotulo, "F0F2F5")
+
+            c_val = linha.cells[1]
+            c_val.width = largura_conteudo
+            p_v = c_val.paragraphs[0]
+            v_run = p_v.add_run(str(valor))
+            v_run.font.name = 'Calibri'
+            v_run.font.size = Pt(10)
+            v_run.font.color.rgb = RGBColor(40, 40, 40)
+
+        # Espaço antes da rubrica de níveis
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+        # Tabela de Rubrica Gradual (Desempenho Pleno, Parcial, Insuficiente)
+        doc.add_heading(f"Rubrica de Desempenho Gradual — Item #{num}", level=3)
+        tab_rubrica = doc.add_table(rows=4, cols=3)
+        tab_rubrica.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tab_rubrica.autofit = False
+
+        headers = ["Nível de Conquista", "Critérios Conceituais Observáveis", "Ponderação Sugerida"]
+        larguras_rubrica = [Inches(1.8), Inches(3.6), Inches(1.1)]
+
+        for c_idx, texto_h in enumerate(headers):
+            cel = tab_rubrica.rows[0].cells[c_idx]
+            cel.width = larguras_rubrica[c_idx]
+            p_h = cel.paragraphs[0]
+            r_h = p_h.add_run(texto_h)
+            r_h.font.name = 'Calibri'
+            r_h.font.size = Pt(9.5)
+            r_h.font.bold = True
+            r_h.font.color.rgb = RGBColor(255, 255, 255)
+            definir_celula_fundo(cel, "1F3864")
+
+        niveis_data = [
+            (
+                "Desempenho Pleno (Excelente)",
+                "Mobiliza com precisão os conceitos solicitados nos comandos segmentados. Identifica, explica ou relaciona as variáveis essenciais requeridas, sem necessidade de estrutura formal extensa.",
+                "90% a 100%"
+            ),
+            (
+                "Desempenho Parcial (Suficiente)",
+                "Demonstra compreensão do núcleo central do conceito, respondendo corretamente à maioria dos subcomandos, com omissão pontual de elementos secundários ou menor articulação teórica.",
+                "50% a 70%"
+            ),
+            (
+                "Desempenho Insuficiente",
+                "Apresenta equívocos conceituais substantivos, fuga ao tema proposto ou ausência de nexo entre os fenômenos solicitados na questão.",
+                "0% a 30%"
+            )
+        ]
+
+        cores_linhas = ["FFFFFF", "F9FAFC", "FFFFFF"]
+        for r_idx, (nivel, desc, pond) in enumerate(niveis_data, start=1):
+            row = tab_rubrica.rows[r_idx]
+            valores = [nivel, desc, pond]
+            for c_idx, val in enumerate(valores):
+                cel = row.cells[c_idx]
+                cel.width = larguras_rubrica[c_idx]
+                p = cel.paragraphs[0]
+                run = p.add_run(val)
+                run.font.name = 'Calibri'
+                run.font.size = Pt(9)
+                if c_idx == 0:
+                    run.font.bold = True
+                definir_celula_fundo(cel, cores_linhas[r_idx - 1])
+
+        doc.add_paragraph().paragraph_format.space_after = Pt(16)
+
+    # Diretrizes de Devolutiva Formativa
+    doc.add_heading("3. Diretrizes para Feedback Formativo Pós-Avaliação", level=1)
+    p_feed = doc.add_paragraph(
+        "1. Realizar a devolutiva pontuando especificamente os conceitos atingidos em cada subcomando.\n"
+        "2. Evitar apontamentos meramente punitivos sobre concisão excessiva quando a resposta estiver conceitualmente exata.\n"
+        "3. Em caso de dúvidas na interpretação da resposta escrita, oportunizar esclarecimento oral breve para verificar a consolidação do construto acadêmico."
+    )
+    p_feed.paragraph_format.line_spacing = 1.15
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+def gerar_instrucoes_aplicacao_sofisticadas(perfil_id: str) -> io.BytesIO:
+    doc = Document()
+    
+    for s in doc.sections:
+        s.top_margin = Inches(1.0)
+        s.bottom_margin = Inches(1.0)
+        s.left_margin = Inches(1.0)
+        s.right_margin = Inches(1.0)
+
+    p_t = doc.add_paragraph()
+    r_t = p_t.add_run(f"Protocolo de Aplicação & Mediação Avaliativa Inclusiva")
+    r_t.font.name = 'Calibri'
+    r_t.font.size = Pt(18)
+    r_t.font.bold = True
+    r_t.font.color.rgb = RGBColor(24, 43, 73)
+    p_t.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    p_sub = doc.add_paragraph()
+    r_sub = p_sub.add_run(f"Guia Operacional para o Docente e Fiscal de Sala | Perfil: {perfil_id}")
+    r_sub.font.name = 'Calibri'
+    r_sub.font.size = Pt(11)
+    r_sub.font.italic = True
+    r_sub.font.color.rgb = RGBColor(80, 80, 80)
+    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
+    doc.add_heading("1. Acomodações Espaciais e Temporais", level=1)
+    p1 = doc.add_paragraph(
+        "• Tempo Adicional Regulamentar: Conceder até 50% de acréscimo temporal para garantir que o processamento atencional "
+        "e a escrita ocorram sem penalização motora.\n"
+        "• Pausas Programadas: Autorizar pausas curtas (3 a 5 minutos) a cada 45 minutos de avaliação para autorregulação "
+        "neurocognitiva, com controle do tempo fora da mesa de prova.\n"
+        "• Posicionamento em Sala: Garantir assento em área com menor fluxo de pessoas (afastado de portas ou janelas movimentadas), "
+        "minimizando estímulos concorrentes."
+    )
+    p1.paragraph_format.line_spacing = 1.15
+
+    doc.add_heading("2. Parâmetros de Mediação Permitida (O que o fiscal PODE e NÃO PODE fazer)", level=1)
+    p2 = doc.add_paragraph(
+        "• Leitura Mediada dos Comandos (Permitida): Se solicitado pelo estudante, o aplicador pode ler em voz alta e ritmo pausado "
+        "o enunciado da questão, estritamente como redigido no caderno adaptado.\n"
+        "• Esclarecimento de Terminologia Geral (Permitida): O aplicador pode clarificar o sentido de termos de comando "
+        "(ex.: 'identificar', 'relacionar'), sem fornecer exemplos do conteúdo da disciplina.\n"
+        "• Indução ou Validação de Resposta (Proibida): Em hipótese alguma o aplicador deve sinalizar se a resposta esboçada está "
+        "certa ou incompleta."
+    )
+    p2.paragraph_format.line_spacing = 1.15
+
+    doc.add_heading("3. Recursos Materiais Autorizados", level=1)
+    p3 = doc.add_paragraph(
+        "• Folhas de Rascunho Ilimitadas: Permitir organização de esquemas gráficos, tópicos e mapas mentais prévios à resposta final.\n"
+        "• Instrumentos de Destaque: Autorizar uso livre de marca-texto, réguas guia de leitura ou canetas de cores diferenciadas "
+        "para decodificação visual dos itens."
+    )
+    p3.paragraph_format.line_spacing = 1.15
+
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -230,7 +488,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     st.error(f"Erro no upload: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
-                    st.write("Adaptando questoes e gerando diretrizes...")
+                    st.write("Adaptando questões e estruturando rubricas analíticas...")
 
                     payload = {
                         "inputs": {
@@ -277,113 +535,4 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                             elif evento == "node_started":
                                 no_nome = dados_evento.get("data", {}).get("title", "")
                                 if no_nome:
-                                    st.write(f"Etapa: {no_nome}...")
-                            elif evento == "node_finished":
-                                dados_no = dados_evento.get("data", {})
-                                if dados_no.get("status") == "failed":
-                                    erro_fluxo = f"Falha no nó {dados_no.get('title')}: {dados_no.get('error')}"
-                        except Exception:
-                            pass
-
-                    if erro_fluxo:
-                        status.update(label="Falha no processamento", state="error")
-                        st.error(f"Erro no Dify: {erro_fluxo}")
-                    elif not outputs_finais:
-                        status.update(label="Processamento sem saida", state="error")
-                        st.error("O fluxo concluiu sem gerar os dados de saida esperados.")
-                    else:
-                        resultado_perfis = outputs_finais.get("resultado_perfis", [])
-
-                        if not resultado_perfis:
-                            status.update(label="Sem dados gerados", state="error")
-                            st.warning("A variavel resultado_perfis retornou vazia.")
-                        else:
-                            buffer_zip = io.BytesIO()
-
-                            with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                                for idx, item_perfil in enumerate(resultado_perfis):
-                                    p_id = f"PERFIL_{idx + 1}"
-                                    if isinstance(item_perfil, dict) and "perfil_id" in item_perfil:
-                                        p_id = item_perfil["perfil_id"]
-
-                                    pares_adaptacao = extrair_pares_seguro(item_perfil)
-                                    docx_adaptado, total_subs, relatorio = aplicar_adaptacoes_docx(bytes_docx, pares_adaptacao)
-                                    nome_prova = f"{p_id}/Caderno_Prova_Adaptada_{p_id}.docx"
-                                    zip_file.writestr(nome_prova, docx_adaptado.getvalue())
-
-                                    docx_gabarito = gerar_documento_texto(
-                                        f"Gabarito e Rubrica Avaliativa - {p_id}",
-                                        {
-                                            "Diretrizes Gerais": "Correcao voltada ao dominio conceitual essencial.",
-                                            "Criterios de Acessibilidade": "Considerar a clareza e nao penalizar tempo motor ou disgrafia."
-                                        }
-                                    )
-                                    nome_gabarito = f"{p_id}/Gabarito_e_Rubrica_{p_id}.docx"
-                                    zip_file.writestr(nome_gabarito, docx_gabarito.getvalue())
-
-                                    docx_instrucoes = gerar_documento_texto(
-                                        f"Instrucoes de Aplicacao - {p_id}",
-                                        {
-                                            "Tempo Adicional": "Conceder ate 50% de acrescimo temporal.",
-                                            "Mediacao": "Permitir leitura de enunciados sem induzir respostas.",
-                                            "Ambiente": "Reduzir distratores visuais e auditivos."
-                                        }
-                                    )
-                                    nome_instrucoes = f"{p_id}/Instrucoes_Aplicacao_{p_id}.docx"
-                                    zip_file.writestr(nome_instrucoes, docx_instrucoes.getvalue())
-
-                                    st.session_state.resumo_geracao.append({
-                                        "perfil": p_id,
-                                        "alteracoes": total_subs,
-                                        "total_pares": len(pares_adaptacao)
-                                    })
-                                    st.session_state.detalhes_log.append({
-                                        "perfil": p_id,
-                                        "log": relatorio,
-                                        "pares": pares_adaptacao
-                                    })
-
-                            buffer_zip.seek(0)
-                            st.session_state.pacote_zip = buffer_zip.getvalue()
-                            status.update(label="Pacote pedagogico gerado com sucesso!", state="complete")
-
-            except Exception as e:
-                status.update(label="Erro no processamento", state="error")
-                st.error(f"Ocorreu um erro: {str(e)}")
-
-if st.session_state.pacote_zip:
-    st.divider()
-    st.subheader("📦 Pacote Pedagógico Pronto para Download")
-    st.markdown("O arquivo compactado contém, organizados por pasta de cada perfil:")
-    st.markdown("- Caderno de Prova Adaptado (`.docx` com layout original)")
-    st.markdown("- Gabarito e Rubrica Avaliativa (`.docx`)")
-    st.markdown("- Guia com Instruções de Aplicação para o Fiscal/Docente (`.docx`)")
-
-    st.download_button(
-        label="📥 Baixar Pacote Completo (.zip)",
-        data=st.session_state.pacote_zip,
-        file_name="Avaliacoes_Adaptadas_Pacote_Completo.zip",
-        mime="application/zip",
-        type="primary",
-        key="btn_zip_consolidado"
-    )
-
-    st.markdown("---")
-    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
-    for i, r in enumerate(st.session_state.resumo_geracao):
-        cols_metrica[i].metric(
-            label=f"Perfil: {r['perfil']}",
-            value=f"{r['alteracoes']} substituídas",
-            help=f"Total de pares detectados: {r['total_pares']}"
-        )
-
-    with st.expander("🔍 Auditoria detalhada das substituições"):
-        for d in st.session_state.detalhes_log:
-            st.markdown(f"### Perfil: {d['perfil']}")
-            if d['log']:
-                for linha in d['log']:
-                    st.text(linha)
-            else:
-                st.warning("Nenhum par de adaptação foi detectado para este perfil.")
-            st.markdown("**Pares aplicados:**")
-            st.json(d['pares'])
+                                    st.write(f"Etapa
