@@ -6,7 +6,7 @@ import streamlit as st
 from docx import Document
 
 st.set_page_config(
-    page_title="Adaptador Acadêmico Inclusivo",
+    page_title="Adaptador Académico Inclusivo",
     page_icon="🎓",
     layout="centered"
 )
@@ -19,10 +19,11 @@ cognitiva e gerará os cadernos adaptados mantendo rigorosamente a identidade vi
 
 # Configurações de ligação ao Dify
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
-DIFY_API_URL = "https://api.dify.ai/v1/workflows/run"
+DIFY_WORKFLOW_URL = "https://api.dify.ai/v1/workflows/run"
+DIFY_UPLOAD_URL = "https://api.dify.ai/v1/files/upload"
 
 # Upload do ficheiro da avaliação
-arquivo_upload = st.file_uploader("Selecione o arquivo da Prova (.docx):", type=["docx"])
+arquivo_upload = st.file_uploader("Selecione o ficheiro da Prova (.docx):", type=["docx"])
 
 contexto_turma_padrao = """[
   {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
@@ -63,14 +64,12 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_adaptacoes: list) -> io.B
             continue
 
         substituido = False
-        # Varredura nos parágrafos principais
         for p in doc.paragraphs:
             if original in p.text or limpar_espacos(original) in limpar_espacos(p.text):
                 substituir_no_paragrafo(p, original, adaptado)
                 substituido = True
                 break
 
-        # Varredura em células de tabelas
         if not substituido:
             for tabela in doc.tables:
                 for linha in tabela.rows:
@@ -94,52 +93,71 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_adaptacoes: list) -> io.B
 
 if st.button("Gerar Avaliações Adaptadas", type="primary"):
     if not arquivo_upload:
-        st.warning("Por favor, selecione um arquivo .docx antes de prosseguir.")
+        st.warning("Por favor, selecione um ficheiro .docx antes de prosseguir.")
     else:
-        with st.spinner("Processando análise pedagógica e gerando adaptações no Dify..."):
+        with st.spinner("A enviar ficheiro e a processar adaptações no Dify..."):
             try:
                 bytes_docx = arquivo_upload.read()
 
-                # Chamada à API do Dify Workflow
-                headers = {
-                    "Authorization": f"Bearer {DIFY_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "inputs": {
-                        "contexto_turma": contexto_turma
-                    },
-                    "response_mode": "blocking",
-                    "user": "docente-web"
-                }
+                headers_auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
 
-                resposta = requests.post(DIFY_API_URL, headers=headers, json=payload)
-
-                if resposta.status_code != 200:
-                    st.error(f"Erro ao consultar o Dify: {resposta.text}")
+                # 1. Carregamento do ficheiro para a API do Dify
+                files = {
+                    'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                }
+                data_upload = {'user': 'docente-web'}
+                
+                resp_upload = requests.post(DIFY_UPLOAD_URL, headers=headers_auth, files=files, data=data_upload)
+                
+                if resp_upload.status_code not in [200, 201]:
+                    st.error(f"Erro no carregamento do ficheiro para o Dify: {resp_upload.text}")
                 else:
-                    dados_saida = resposta.json().get("data", {}).get("outputs", {})
-                    resultado_perfis = dados_saida.get("resultado_perfis", [])
+                    file_id = resp_upload.json().get("id")
 
-                    if not resultado_perfis:
-                        st.warning("Nenhum dado retornado pelo workflow do Dify.")
+                    # 2. Execução do fluxo passando arquivo_prova e contexto_turma
+                    payload = {
+                        "inputs": {
+                            "arquivo_prova": {
+                                "type": "document",
+                                "transfer_method": "local_file",
+                                "upload_file_id": file_id
+                            },
+                            "contexto_turma": contexto_turma
+                        },
+                        "response_mode": "blocking",
+                        "user": "docente-web"
+                    }
+
+                    resposta = requests.post(
+                        DIFY_WORKFLOW_URL, 
+                        headers={**headers_auth, "Content-Type": "application/json"}, 
+                        json=payload
+                    )
+
+                    if resposta.status_code != 200:
+                        st.error(f"Erro ao consultar o Dify: {resposta.text}")
                     else:
-                        st.success("Adaptação concluída com sucesso!")
-                        
-                        # Gera um botão de download para cada perfil processado
-                        for idx, bloco in enumerate(resultado_perfis):
-                            lista_itens = json.loads(bloco) if isinstance(bloco, str) else bloco
-                            
-                            arquivo_modificado = aplicar_adaptacoes_docx(bytes_docx, lista_itens)
-                            nome_saida = f"avaliacao_adaptada_perfil_{idx + 1}.docx"
+                        dados_saida = resposta.json().get("data", {}).get("outputs", {})
+                        resultado_perfis = dados_saida.get("resultado_perfis", [])
 
-                            st.download_button(
-                                label=f"📥 Baixar Caderno Adaptado #{idx + 1} (.docx)",
-                                data=arquivo_modificado,
-                                file_name=nome_saida,
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                key=f"btn_dl_{idx}"
-                            )
+                        if not resultado_perfis:
+                            st.warning("Nenhum dado retornado pelo workflow do Dify.")
+                        else:
+                            st.success("Adaptação concluída com sucesso!")
+                            
+                            for idx, bloco in enumerate(resultado_perfis):
+                                lista_itens = json.loads(bloco) if isinstance(bloco, str) else bloco
+                                
+                                arquivo_modificado = aplicar_adaptacoes_docx(bytes_docx, lista_itens)
+                                nome_saida = f"avaliacao_adaptada_perfil_{idx + 1}.docx"
+
+                                st.download_button(
+                                    label=f"📥 Descarregar Caderno Adaptado #{idx + 1} (.docx)",
+                                    data=arquivo_modificado,
+                                    file_name=nome_saida,
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key=f"btn_dl_{idx}"
+                                )
 
             except Exception as e:
                 st.error(f"Ocorreu um erro no processamento: {str(e)}")
