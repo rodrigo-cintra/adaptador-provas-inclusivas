@@ -22,7 +22,7 @@ DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
 DIFY_WORKFLOW_URL = "https://api.dify.ai/v1/workflows/run"
 DIFY_UPLOAD_URL = "https://api.dify.ai/v1/files/upload"
 
-# Upload do ficheiro da avaliação
+# Upload do arquivo da avaliação
 arquivo_upload = st.file_uploader("Selecione o arquivo da Prova (.docx):", type=["docx"])
 
 contexto_turma_padrao = """[
@@ -97,26 +97,29 @@ if st.button("Gerar Avaliações Adaptadas", type="primary"):
     if not arquivo_upload:
         st.warning("Por favor, selecione um arquivo .docx antes de prosseguir.")
     else:
-        with st.spinner("Enviando arquivo e processando adaptações no Dify..."):
+        with st.status("Processando avaliação no Dify Cloud...", expanded=True) as status:
             try:
                 bytes_docx = arquivo_upload.read()
 
                 headers_auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
 
                 # 1. Carregamento do arquivo para a API do Dify
+                st.write("📤 Enviando documento institucional...")
                 files = {
                     'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
                 }
                 data_upload = {'user': 'docente-web'}
                 
-                resp_upload = requests.post(DIFY_UPLOAD_URL, headers=headers_auth, files=files, data=data_upload)
+                resp_upload = requests.post(DIFY_UPLOAD_URL, headers=headers_auth, files=files, data=data_upload, timeout=60)
                 
                 if resp_upload.status_code not in [200, 201]:
-                    st.error(f"Erro no carregamento do arquivo para o Dify: {resp_upload.text}")
+                    status.update(label="Erro no envio do arquivo", state="error")
+                    st.error(f"Erro no upload: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
+                    st.write("🧠 Processando taxonomia pedagógica e perfis...")
 
-                    # 2. Execução do fluxo passando arquivo_prova como LISTA de arquivos
+                    # 2. Execução com streaming para prevenir timeout 504
                     payload = {
                         "inputs": {
                             "arquivo_prova": [
@@ -128,26 +131,50 @@ if st.button("Gerar Avaliações Adaptadas", type="primary"):
                             ],
                             "contexto_turma": contexto_turma
                         },
-                        "response_mode": "blocking",
+                        "response_mode": "streaming",
                         "user": "docente-web"
                     }
 
                     resposta = requests.post(
                         DIFY_WORKFLOW_URL, 
                         headers={**headers_auth, "Content-Type": "application/json"}, 
-                        json=payload
+                        json=payload,
+                        stream=True,
+                        timeout=600
                     )
 
-                    if resposta.status_code != 200:
-                        st.error(f"Erro ao consultar o Dify: {resposta.text}")
-                    else:
-                        dados_saida = resposta.json().get("data", {}).get("outputs", {})
-                        resultado_perfis = dados_saida.get("resultado_perfis", [])
+                    outputs_finais = None
+                    
+                    # Leitura dos chunks SSE do streaming
+                    for linha in resposta.iter_lines():
+                        if linha:
+                            linha_str = linha.decode('utf-8')
+                            if linha_str.startswith("data:"):
+                                corpo = linha_str[5:].strip()
+                                if corpo:
+                                    try:
+                                        dados_evento = json.loads(corpo)
+                                        evento = dados_evento.get("event")
+                                        if evento == "workflow_finished":
+                                            outputs_finais = dados_evento.get("data", {}).get("outputs", {})
+                                        elif evento == "node_started":
+                                            no_nome = dados_evento.get("data", {}).get("title", "")
+                                            if no_nome:
+                                                st.write(f"⚙️ Executando etapa: {no_nome}...")
+                                    except Exception:
+                                        pass
 
+                    if not outputs_finais:
+                        status.update(label="Erro na execução", state="error")
+                        st.error("O fluxo não retornou os dados esperados ou foi interrompido.")
+                    else:
+                        resultado_perfis = outputs_finais.get("resultado_perfis", [])
                         if not resultado_perfis:
-                            st.warning("Nenhum dado retornado pelo workflow do Dify.")
+                            status.update(label="Concluído com avisos", state="complete")
+                            st.warning("Nenhuma adaptação encontrada na saída do workflow.")
                         else:
-                            st.success("Adaptação concluída com sucesso!")
+                            status.update(label="Adaptação concluída com sucesso!", state="complete")
+                            st.success("Cadernos adaptados gerados com sucesso!")
                             
                             for idx, bloco in enumerate(resultado_perfis):
                                 lista_itens = json.loads(bloco) if isinstance(bloco, str) else bloco
@@ -164,4 +191,5 @@ if st.button("Gerar Avaliações Adaptadas", type="primary"):
                                 )
 
             except Exception as e:
-                st.error(f"Ocorreu um erro no processamento: {str(e)}")
+                status.update(label="Erro inesperado", state="error")
+                st.error(f"Falha durante a execução: {str(e)}")
