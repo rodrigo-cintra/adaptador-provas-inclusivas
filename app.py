@@ -139,7 +139,6 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_adaptacoes: list):
     return buffer_saida, total_substituicoes, relatorio
 
 def gerar_documento_texto(titulo: str, secoes: dict) -> io.BytesIO:
-    """Gera um arquivo .docx estruturado para gabaritos e instruções."""
     doc = Document()
     doc.add_heading(titulo, level=1)
     
@@ -274,18 +273,76 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
 
                                     # 2. Gabarito e Rubrica de Correção (.docx)
                                     gabarito_data = dados_p.get("rubrica_correcao") or dados_p.get("gabarito") or {
-                                        "Informação": "Rubrica integrada nas diretrizes pedagógicas.",
-                                        "Equivalência de Critérios": "Avaliar o domínio cognitivo sem penalizar déficits atencionais ou de velocidade motora."
+                                        "Informacao": "Rubrica pedagogica integrada.",
+                                        "Equivalencia": "Avaliar o dominio conceitual sem penalizar velocidade motora."
                                     }
                                     docx_gabarito = gerar_documento_texto(
                                         f"Gabarito e Rubrica Avaliativa - {p_id}",
-                                        {"Diretrizes de Correção": gabarito_data}
+                                        {"Diretrizes de Correcao": gabarito_data}
                                     )
                                     nome_gabarito = f"{p_id}/Gabarito_e_Rubrica_{p_id}.docx"
                                     zip_file.writestr(nome_gabarito, docx_gabarito.getvalue())
 
                                     # 3. Guia de Aplicação e Mediação (.docx)
                                     instrucoes_data = dados_p.get("instrucoes_aplicacao") or dados_p.get("guia_mediacao") or {
-                                        "Acomodações de Tempo": "Tempo adicional de até 50% conforme preconizado pelas diretrizes de acessibilidade.",
-                                        "Mediação do Fiscal": "Permitir leitura em voz alta das questões caso solicitado; evitar estímulos concorrentes.",
-                                        "Recursos Permitidos": "U
+                                        "Acomodacoes de Tempo": "Tempo adicional de ate 50% conforme diretrizes de acessibilidade.",
+                                        "Mediacao do Fiscal": "Permitir leitura em voz alta se solicitado; reduzir estimulos concorrentes.",
+                                        "Recursos Permitidos": "Uso de folhas de rascunho sem limite e pausas para autorregulacao."
+                                    }
+                                    docx_instrucoes = gerar_documento_texto(
+                                        f"Instrucoes de Aplicacao - {p_id}",
+                                        {"Orientacoes de Sala": instrucoes_data}
+                                    )
+                                    nome_instrucoes = f"{p_id}/Instrucoes_Aplicacao_{p_id}.docx"
+                                    zip_file.writestr(nome_instrucoes, docx_instrucoes.getvalue())
+
+                                    st.session_state.resumo_geracao.append({
+                                        "perfil": p_id,
+                                        "alteracoes": total_subs
+                                    })
+                                    st.session_state.detalhes_log.append({
+                                        "perfil": p_id,
+                                        "log": relatorio,
+                                        "bruto": dados_p
+                                    })
+
+                            buffer_zip.seek(0)
+                            st.session_state.pacote_zip = buffer_zip.getvalue()
+                            status.update(label="Pacote pedagógico gerado com sucesso!", state="complete")
+
+            except Exception as e:
+                status.update(label="Erro no processamento", state="error")
+                st.error(f"Ocorreu um erro: {str(e)}")
+
+# Exibição do botão consolidado e métricas
+if st.session_state.pacote_zip:
+    st.divider()
+    st.subheader("📦 Pacote Pedagógico Pronto para Download")
+    st.markdown("O arquivo compactado contém, organizados por pasta de cada perfil:")
+    st.markdown("✔️ Caderno de Prova Adaptado (`.docx` com layout original)")
+    st.markdown("✔️ Gabarito e Rubrica Avaliativa (`.docx`)")
+    st.markdown("✔️ Guia com Instruções de Aplicação para o Fiscal/Docente (`.docx`)")
+
+    col_btn, _ = st.columns([2, 1])
+    with col_btn:
+        st.download_button(
+            label="📥 Baixar Pacote Completo (.zip)",
+            data=st.session_state.pacote_zip,
+            file_name="Avaliacoes_Adaptadas_Pacote_Completo.zip",
+            mime="application/zip",
+            type="primary",
+            key="btn_zip_consolidado"
+        )
+
+    st.markdown("---")
+    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
+    for i, r in enumerate(st.session_state.resumo_geracao):
+        cols_metrica[i].metric(label=f"Perfil: {r['perfil']}", value=f"{r['alteracoes']} modificações")
+
+    with st.expander("🔍 Auditoria de substituições aplicadas"):
+        for d in st.session_state.detalhes_log:
+            st.markdown(f"**Perfil: {d['perfil']}**")
+            for linha in d['log']:
+                st.text(linha)
+            st.caption("JSON de retorno:")
+            st.json(d['bruto'])
