@@ -22,7 +22,8 @@ st.set_page_config(
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva, gerará os cadernos adaptados, as rubricas analíticas aprofundadas e o guia de aplicação em um único pacote consolidado.
+cognitiva, gerará os cadernos adaptados, as rubricas analíticas e os protocolos 
+oficiais de aplicação com rigor metodológico em um pacote único compactado.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -200,7 +201,6 @@ def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
     dados = item_par.get("dados_completos", {})
     texto = item_par.get("original", "").lower()
     
-    # Detecção taxonômica inferida por verbos de comando se não vier no JSON
     nivel_bloom = dados.get("bloom") or dados.get("nivel_cognitivo")
     if not nivel_bloom:
         if any(v in texto for v in ["avalie", "julgue", "critique", "defenda"]):
@@ -233,17 +233,14 @@ def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
 def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io.BytesIO:
     doc = Document()
     
-    # Configuração de margens
-    sections = doc.sections
-    for section in sections:
+    for section in doc.sections:
         section.top_margin = Inches(1.0)
         section.bottom_margin = Inches(1.0)
         section.left_margin = Inches(1.0)
         section.right_margin = Inches(1.0)
 
-    # Título Principal
     p_title = doc.add_paragraph()
-    run_title = p_title.add_run(f"Gabarito Orientado & Matriz de Correção Analítica")
+    run_title = p_title.add_run("Gabarito Orientado & Matriz de Correção Analítica")
     run_title.font.name = 'Calibri'
     run_title.font.size = Pt(20)
     run_title.font.bold = True
@@ -260,7 +257,6 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
 
     doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
-    # Quadro de Fundamentação Pedagógica
     doc.add_heading("1. Fundamentação Pedagógica & Princípios Avaliativos", level=1)
     p_fund = doc.add_paragraph(
         "Este documento estabelece a matriz de correção técnica para o caderno adaptado, assegurando o princípio "
@@ -271,7 +267,6 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
     p_fund.paragraph_format.line_spacing = 1.15
     p_fund.paragraph_format.space_after = Pt(14)
 
-    # Matriz Analítica por Questão
     doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
 
     for idx, par in enumerate(lista_pares):
@@ -282,7 +277,6 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
         h2.paragraph_format.space_before = Pt(16)
         h2.paragraph_format.space_after = Pt(6)
 
-        # Tabela Estruturada do Item
         tabela = doc.add_table(rows=6, cols=2)
         tabela.alignment = WD_TABLE_ALIGNMENT.CENTER
         tabela.autofit = False
@@ -301,7 +295,6 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
 
         for i, (rotulo, valor) in enumerate(dados_tabela):
             linha = tabela.rows[i]
-            
             c_rotulo = linha.cells[0]
             c_rotulo.width = largura_rotulo
             p_r = c_rotulo.paragraphs[0]
@@ -320,10 +313,8 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
             v_run.font.size = Pt(10)
             v_run.font.color.rgb = RGBColor(40, 40, 40)
 
-        # Espaço antes da rubrica de níveis
         doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
-        # Tabela de Rubrica Gradual (Desempenho Pleno, Parcial, Insuficiente)
         doc.add_heading(f"Rubrica de Desempenho Gradual — Item #{num}", level=3)
         tab_rubrica = doc.add_table(rows=4, cols=3)
         tab_rubrica.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -378,7 +369,6 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
 
         doc.add_paragraph().paragraph_format.space_after = Pt(16)
 
-    # Diretrizes de Devolutiva Formativa
     doc.add_heading("3. Diretrizes para Feedback Formativo Pós-Avaliação", level=1)
     p_feed = doc.add_paragraph(
         "1. Realizar a devolutiva pontuando especificamente os conceitos atingidos em cada subcomando.\n"
@@ -392,7 +382,8 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
     buffer.seek(0)
     return buffer
 
-def gerar_instrucoes_aplicacao_sofisticadas(perfil_id: str) -> io.BytesIO:
+def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.BytesIO:
+    """Gera um protocolo executivo, estruturado e com rigor psicopedagógico para aplicação de prova."""
     doc = Document()
     
     for s in doc.sections:
@@ -401,8 +392,9 @@ def gerar_instrucoes_aplicacao_sofisticadas(perfil_id: str) -> io.BytesIO:
         s.left_margin = Inches(1.0)
         s.right_margin = Inches(1.0)
 
+    # Cabeçalho Oficial
     p_t = doc.add_paragraph()
-    r_t = p_t.add_run(f"Protocolo de Aplicação & Mediação Avaliativa Inclusiva")
+    r_t = p_t.add_run("Protocolo Oficial de Aplicação & Mediação Avaliativa")
     r_t.font.name = 'Calibri'
     r_t.font.size = Pt(18)
     r_t.font.bold = True
@@ -410,44 +402,202 @@ def gerar_instrucoes_aplicacao_sofisticadas(perfil_id: str) -> io.BytesIO:
     p_t.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     p_sub = doc.add_paragraph()
-    r_sub = p_sub.add_run(f"Guia Operacional para o Docente e Fiscal de Sala | Perfil: {perfil_id}")
+    r_sub = p_sub.add_run(f"Diretrizes Técnicas de Sala para o Fiscal e Docente | Perfil Funcional: {perfil_id}")
     r_sub.font.name = 'Calibri'
     r_sub.font.size = Pt(11)
     r_sub.font.italic = True
     r_sub.font.color.rgb = RGBColor(80, 80, 80)
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
+
+    # Quadro 1: Ficha de Parametrização Técnica
+    doc.add_heading("1. Ficha de Parametrização & Registro de Sala", level=1)
+    
+    tab_ficha = doc.add_table(rows=4, cols=2)
+    tab_ficha.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_ficha.autofit = False
+
+    larguras_ficha = [Inches(2.2), Inches(4.3)]
+    dados_ficha = [
+        ("Perfil Funcional Alvo:", f"{perfil_id} (Adaptação Didática com Equivalência Cognitiva)"),
+        ("Fundamentação de Acessibilidade:", "Desenho Universal para a Aprendizagem (DUA) e Diretrizes Institucionais de Equidade"),
+        ("Responsável pela Aplicação / Fiscal:", "________________________________________________________"),
+        ("Horário Previsto (Início / Término):", "[ ___ : ___ ]  às  [ ___ : ___ ] (com tempo estendido homologado)")
+    ]
+
+    for i, (campo, val) in enumerate(dados_ficha):
+        row = tab_ficha.rows[i]
+        c0 = row.cells[0]
+        c0.width = larguras_ficha[0]
+        p0 = c0.paragraphs[0]
+        r0 = p0.add_run(campo)
+        r0.font.name = 'Calibri'
+        r0.font.size = Pt(9.5)
+        r0.font.bold = True
+        definir_celula_fundo(c0, "F0F2F5")
+
+        c1 = row.cells[1]
+        c1.width = larguras_ficha[1]
+        p1 = c1.paragraphs[0]
+        r1 = p1.add_run(val)
+        r1.font.name = 'Calibri'
+        r1.font.size = Pt(9.5)
+
     doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
-    doc.add_heading("1. Acomodações Espaciais e Temporais", level=1)
-    p1 = doc.add_paragraph(
-        "• Tempo Adicional Regulamentar: Conceder até 50% de acréscimo temporal para garantir que o processamento atencional "
-        "e a escrita ocorram sem penalização motora.\n"
-        "• Pausas Programadas: Autorizar pausas curtas (3 a 5 minutos) a cada 45 minutos de avaliação para autorregulação "
-        "neurocognitiva, com controle do tempo fora da mesa de prova.\n"
-        "• Posicionamento em Sala: Garantir assento em área com menor fluxo de pessoas (afastado de portas ou janelas movimentadas), "
-        "minimizando estímulos concorrentes."
-    )
-    p1.paragraph_format.line_spacing = 1.15
+    # Seção 2: Matriz Operacional de Acomodações
+    doc.add_heading("2. Matriz Operacional de Acomodações Avaliativas", level=1)
+    
+    tab_acomod = doc.add_table(rows=4, cols=3)
+    tab_acomod.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_acomod.autofit = False
 
-    doc.add_heading("2. Parâmetros de Mediação Permitida (O que o fiscal PODE e NÃO PODE fazer)", level=1)
-    p2 = doc.add_paragraph(
-        "• Leitura Mediada dos Comandos (Permitida): Se solicitado pelo estudante, o aplicador pode ler em voz alta e ritmo pausado "
-        "o enunciado da questão, estritamente como redigido no caderno adaptado.\n"
-        "• Esclarecimento de Terminologia Geral (Permitida): O aplicador pode clarificar o sentido de termos de comando "
-        "(ex.: 'identificar', 'relacionar'), sem fornecer exemplos do conteúdo da disciplina.\n"
-        "• Indução ou Validação de Resposta (Proibida): Em hipótese alguma o aplicador deve sinalizar se a resposta esboçada está "
-        "certa ou incompleta."
-    )
-    p2.paragraph_format.line_spacing = 1.15
+    headers_ac = ["Dimensão", "Parâmetro Operacional Homologado", "Justificativa Neurocognitiva"]
+    larguras_ac = [Inches(1.8), Inches(2.6), Inches(2.1)]
 
-    doc.add_heading("3. Recursos Materiais Autorizados", level=1)
-    p3 = doc.add_paragraph(
-        "• Folhas de Rascunho Ilimitadas: Permitir organização de esquemas gráficos, tópicos e mapas mentais prévios à resposta final.\n"
-        "• Instrumentos de Destaque: Autorizar uso livre de marca-texto, réguas guia de leitura ou canetas de cores diferenciadas "
-        "para decodificação visual dos itens."
+    for c_idx, h_txt in enumerate(headers_ac):
+        cel = tab_acomod.rows[0].cells[c_idx]
+        cel.width = larguras_ac[c_idx]
+        p = cel.paragraphs[0]
+        run = p.add_run(h_txt)
+        run.font.name = 'Calibri'
+        run.font.size = Pt(9.5)
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        definir_celula_fundo(cel, "1F3864")
+
+    # Customização técnica por perfil
+    tempo_just = "Compensa a velocidade de decodificação e processamento grafo-motor sem alterar o rigor epistemológico."
+    espaco_param = "Posicionamento preferencial nas primeiras fileiras ou em sala de aplicação com baixa densidade de estímulos visuais e auditivos."
+    espaco_just = "Previne sobrecarga sensorial e descontinuidade atencional frente a ruídos de movimentação."
+    
+    if "TDAH" in perfil_id.upper():
+        pausa_param = "Pausas breves de autorregulação (3 a 5 minutos) a cada 45 minutos de execução contínua."
+        pausa_just = "Favorece o restabelecimento da memória de trabalho e mitiga o desgaste executivo por sustentação de foco prolongado."
+    elif "TEA" in perfil_id.upper():
+        pausa_param = "Pausas programadas para descompressão sensorial, com permanência em ambiente calmo se necessário."
+        pausa_just = "Previne crises de sobrecarga sensorial ou exaustão por saturação ambiental."
+    else:
+        pausa_param = "Pausas regulares a critério do estudante, registradas em ata de prova."
+        pausa_just = "Favorece a manutenção da precisão motora e o foco atencional."
+
+    acomod_linhas = [
+        ("Acréscimo Temporal", "Até 50% de tempo adicional além da duração regular da turma.", tempo_just),
+        ("Ergonomia Espacial", espaco_param, espaco_just),
+        ("Pausas Programadas", pausa_param, pausa_just)
+    ]
+
+    for r_idx, (dim, parm, just) in enumerate(acomod_linhas, start=1):
+        row = tab_acomod.rows[r_idx]
+        for c_idx, txt in enumerate([dim, parm, just]):
+            cel = row.cells[c_idx]
+            cel.width = larguras_ac[c_idx]
+            p = cel.paragraphs[0]
+            run = p.add_run(txt)
+            run.font.name = 'Calibri'
+            run.font.size = Pt(9)
+            if c_idx == 0:
+                run.font.bold = True
+            definir_celula_fundo(cel, "FFFFFF" if r_idx % 2 != 0 else "F9FAFC")
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(14)
+
+    # Seção 3: Protocolo de Mediação de Sala (Permitido vs. Vedado)
+    doc.add_heading("3. Limiares de Mediação: Condutas Autorizadas e Vedações", level=1)
+    
+    tab_mediacao = doc.add_table(rows=5, cols=2)
+    tab_mediacao.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_mediacao.autofit = False
+
+    larguras_med = [Inches(3.25), Inches(3.25)]
+
+    h_med = ["Condutas Autorizadas (Mediação Válida)", "Condutas Vedadas (Comprometimento de Fidedignidade)"]
+    for c_idx, h_txt in enumerate(h_med):
+        cel = tab_mediacao.rows[0].cells[c_idx]
+        cel.width = larguras_med[c_idx]
+        p = cel.paragraphs[0]
+        run = p.add_run(h_txt)
+        run.font.name = 'Calibri'
+        run.font.size = Pt(9.5)
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        definir_celula_fundo(cel, "2E75B6" if c_idx == 0 else "C00000")
+
+    regras_mediacao = [
+        (
+            "Leitura Mediada de Enunciados: O fiscal pode reler comandos pausadamente, atendo-se exatamente às palavras impressas no caderno adaptado.",
+            "Parafrasear Conceitos Acadêmicos: É vedado reescrever, explicar o significado de teorias ou dar pistas sobre o tema cobrado na questão."
+        ),
+        (
+            "Esclarecimento de Comandos Metodológicos: É permitido clarificar o que significa o verbo de ação (ex.: 'identifique', 'relacione').",
+            "Validar Respostas Parciais: É estritamente proibido emitir pareceres como 'está no caminho certo' ou 'leia de novo porque está faltando algo'."
+        ),
+        (
+            "Autorização de Recursos de Apoio: Permitir folhas de rascunho sem limites para esquemas mentais, marca-textos coloridos e réguas guia.",
+            "Impor Padrão Gráfico Rígido: Não coagir o aluno a preencher rascunhos em prosa quando ele preferir esquematizar em tópicos ou bullet points."
+        ),
+        (
+            "Sinalização Suave de Tempo: Avisar periodicamente o tempo restante de forma individual e serena, evitando avisos abruptos para a sala toda.",
+            "Pressão por Celeridade: Nunca induzir o estudante a acelerar a escrita com comparações ao ritmo de término de outros alunos da turma."
+        )
+    ]
+
+    for r_idx, (permitido, proibido) in enumerate(regras_mediacao, start=1):
+        row = tab_mediacao.rows[r_idx]
+        for c_idx, val in enumerate([permitido, proibido]):
+            cel = row.cells[c_idx]
+            cel.width = larguras_med[c_idx]
+            p = cel.paragraphs[0]
+            run = p.add_run(val)
+            run.font.name = 'Calibri'
+            run.font.size = Pt(8.5)
+            definir_celula_fundo(cel, "F2F7FA" if c_idx == 0 else "FDF2F2")
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(14)
+
+    # Seção 4: Manejo de Ansiedade e Sobrecarga Cognitiva
+    doc.add_heading("4. Protocolo de Contingência: Sobrecarga & Ansiedade Avaliativa", level=1)
+    p_crise = doc.add_paragraph(
+        "Caso o estudante manifeste sinais de bloqueio atencional, agitação psicomotora, sobrecarga sensorial ou crise ansiosa:\n"
+        "1. Interrupção Neutra: Convide o estudante a afastar-se momentaneamente da folha de prova, sem chamar a atenção dos demais colegas.\n"
+        "2. Pausa Hídrica / Descompressão: Permita a ingestão de água e respiração consciente fora da sala de prova por até 5 minutos.\n"
+        "3. Retomada sem Pressão: Ao regressar, oriente-o a retomar por um item que considere mais acessível, restabelecendo a autoconfiança executiva.\n"
+        "4. Registro Obrigatório: Qualquer intercorrência atípica deve ser descrita objetivamente no Termo de Encerramento abaixo."
     )
-    p3.paragraph_format.line_spacing = 1.15
+    p_crise.paragraph_format.line_spacing = 1.15
+    p_crise.paragraph_format.space_after = Pt(14)
+
+    # Seção 5: Termo de Encerramento e Assinaturas
+    doc.add_heading("5. Termo de Encerramento & Conformidade da Aplicação", level=1)
+    
+    tab_termo = doc.add_table(rows=3, cols=1)
+    tab_termo.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_termo.autofit = False
+    
+    cel_obs = tab_termo.rows[0].cells[0]
+    cel_obs.width = Inches(6.5)
+    p_obs = cel_obs.paragraphs[0]
+    p_obs.add_run("Registro de Ocorrências / Observações Relevantes de Sala:\n\n\n").font.size = Pt(9)
+    definir_celula_fundo(cel_obs, "FAFAFA")
+
+    cel_decl = tab_termo.rows[1].cells[0]
+    cel_decl.width = Inches(6.5)
+    p_decl = cel_decl.paragraphs[0]
+    p_decl.add_run(
+        "Declaro que a avaliação foi administrada em estrita conformidade com os parâmetros operacionais e éticos "
+        "deste protocolo, assegurando a lisura acadêmica e os direitos de acessibilidade do estudante."
+    ).font.size = Pt(8.5)
+
+    cel_ass = tab_termo.rows[2].cells[0]
+    cel_ass.width = Inches(6.5)
+    p_ass = cel_ass.paragraphs[0]
+    p_ass.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_ass.add_run(
+        "\n___________________________________________________\n"
+        "Assinatura do Responsável pela Aplicação / Fiscal de Sala\n"
+        "Data: _____ / _____ / 2026"
+    ).font.size = Pt(9)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -488,7 +638,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     st.error(f"Erro no upload: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
-                    st.write("Adaptando questões e estruturando rubricas analíticas...")
+                    st.write("Adaptando questões, rubricas psicométricas e protocolos operacionais...")
 
                     payload = {
                         "inputs": {
@@ -535,4 +685,16 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                             elif evento == "node_started":
                                 no_nome = dados_evento.get("data", {}).get("title", "")
                                 if no_nome:
-                                    st.write(f"Etapa
+                                    st.write(f"Etapa: {no_nome}...")
+                            elif evento == "node_finished":
+                                dados_no = dados_evento.get("data", {})
+                                if dados_no.get("status") == "failed":
+                                    erro_fluxo = f"Falha no nó {dados_no.get('title')}: {dados_no.get('error')}"
+                        except Exception:
+                            pass
+
+                    if erro_fluxo:
+                        status.update(label="Falha no processamento", state="error")
+                        st.error(f"Erro no Dify: {erro_fluxo}")
+                    elif not outputs_finais:
+                        status.update(
