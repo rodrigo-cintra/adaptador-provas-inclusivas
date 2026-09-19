@@ -6,7 +6,7 @@ import streamlit as st
 from docx import Document
 
 st.set_page_config(
-    page_title="Adaptador Académico Inclusivo",
+    page_title="Adaptador Acadêmico Inclusivo",
     page_icon="🎓",
     layout="centered"
 )
@@ -23,7 +23,7 @@ DIFY_WORKFLOW_URL = "https://api.dify.ai/v1/workflows/run"
 DIFY_UPLOAD_URL = "https://api.dify.ai/v1/files/upload"
 
 # Upload do ficheiro da avaliação
-arquivo_upload = st.file_uploader("Selecione o ficheiro da Prova (.docx):", type=["docx"])
+arquivo_upload = st.file_uploader("Selecione o arquivo da Prova (.docx):", type=["docx"])
 
 contexto_turma_padrao = """[
   {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
@@ -64,12 +64,14 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_adaptacoes: list) -> io.B
             continue
 
         substituido = False
+        # Varredura nos parágrafos principais
         for p in doc.paragraphs:
             if original in p.text or limpar_espacos(original) in limpar_espacos(p.text):
                 substituir_no_paragrafo(p, original, adaptado)
                 substituido = True
                 break
 
+        # Varredura em células de tabelas
         if not substituido:
             for tabela in doc.tables:
                 for linha in tabela.rows:
@@ -93,15 +95,15 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_adaptacoes: list) -> io.B
 
 if st.button("Gerar Avaliações Adaptadas", type="primary"):
     if not arquivo_upload:
-        st.warning("Por favor, selecione um ficheiro .docx antes de prosseguir.")
+        st.warning("Por favor, selecione um arquivo .docx antes de prosseguir.")
     else:
-        with st.spinner("A enviar ficheiro e a processar adaptações no Dify..."):
+        with st.spinner("Enviando arquivo e processando adaptações no Dify..."):
             try:
                 bytes_docx = arquivo_upload.read()
 
                 headers_auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
 
-                # 1. Carregamento do ficheiro para a API do Dify
+                # 1. Carregamento do arquivo para a API do Dify
                 files = {
                     'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
                 }
@@ -110,18 +112,20 @@ if st.button("Gerar Avaliações Adaptadas", type="primary"):
                 resp_upload = requests.post(DIFY_UPLOAD_URL, headers=headers_auth, files=files, data=data_upload)
                 
                 if resp_upload.status_code not in [200, 201]:
-                    st.error(f"Erro no carregamento do ficheiro para o Dify: {resp_upload.text}")
+                    st.error(f"Erro no carregamento do arquivo para o Dify: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
 
-                    # 2. Execução do fluxo passando arquivo_prova e contexto_turma
+                    # 2. Execução do fluxo passando arquivo_prova como LISTA de arquivos
                     payload = {
                         "inputs": {
-                            "arquivo_prova": {
-                                "type": "document",
-                                "transfer_method": "local_file",
-                                "upload_file_id": file_id
-                            },
+                            "arquivo_prova": [
+                                {
+                                    "type": "document",
+                                    "transfer_method": "local_file",
+                                    "upload_file_id": file_id
+                                }
+                            ],
                             "contexto_turma": contexto_turma
                         },
                         "response_mode": "blocking",
@@ -152,7 +156,7 @@ if st.button("Gerar Avaliações Adaptadas", type="primary"):
                                 nome_saida = f"avaliacao_adaptada_perfil_{idx + 1}.docx"
 
                                 st.download_button(
-                                    label=f"📥 Descarregar Caderno Adaptado #{idx + 1} (.docx)",
+                                    label=f"📥 Baixar Caderno Adaptado #{idx + 1} (.docx)",
                                     data=arquivo_modificado,
                                     file_name=nome_saida,
                                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
