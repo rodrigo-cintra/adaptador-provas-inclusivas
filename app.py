@@ -52,7 +52,6 @@ def limpar_string(s: str) -> str:
     return s.strip()
 
 def preencher_paragrafo_com_markdown(paragrafo, texto_formatado: str):
-    """Substitui o conteúdo do parágrafo aplicando negrito real para padrões **texto**."""
     paragrafo.text = ""
     partes = re.split(r'(\*\*.*?\*\*)', texto_formatado)
     for parte in partes:
@@ -70,18 +69,15 @@ def substituir_em_paragrafo(paragrafo, texto_antigo: str, texto_novo: str) -> bo
     antigo_limpo = limpar_string(texto_antigo)
     p_limpo = limpar_string(texto_p)
 
-    # 1. Correspondência exata direta
     if texto_antigo in texto_p:
         preencher_paragrafo_com_markdown(paragrafo, texto_p.replace(texto_antigo, texto_novo))
         return True
 
-    # 2. Correspondência normalizada sem pontuações ou espaços residuais
     if antigo_limpo in p_limpo or p_limpo in antigo_limpo:
         if len(antigo_limpo) >= 15:
             preencher_paragrafo_com_markdown(paragrafo, texto_novo)
             return True
 
-    # 3. Correspondência por similaridade difusa
     if len(antigo_limpo) > 20 and len(p_limpo) > 20:
         razao = difflib.SequenceMatcher(None, antigo_limpo, p_limpo).ratio()
         if razao >= 0.70:
@@ -91,9 +87,7 @@ def substituir_em_paragrafo(paragrafo, texto_antigo: str, texto_novo: str) -> bo
     return False
 
 def extrair_pares_seguro(bloco_bruto):
-    """Decodifica com suporte tanto a JSON rigoroso quanto a literais com aspas simples."""
     dados = None
-    
     if isinstance(bloco_bruto, dict) and "conteudo" in bloco_bruto:
         bloco_bruto = bloco_bruto["conteudo"]
 
@@ -134,12 +128,10 @@ def extrair_pares_seguro(bloco_bruto):
                 continue
             orig = elem.get("texto_original") or elem.get("enunciado_original") or elem.get("original") or ""
             adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
-            
             orig_s = str(orig).strip()
             adapt_s = str(adapt).strip()
             if orig_s and adapt_s:
                 pares.append({"original": orig_s, "adaptado": adapt_s})
-
     return pares
 
 def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
@@ -156,7 +148,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
             if substituir_em_paragrafo(p, original, adaptado):
                 substituido = True
                 total_substituicoes += 1
-                relatorio.append(f"✅ Substituído: '{original[:45]}...'")
+                relatorio.append(f"Substituido: {original[:40]}...")
                 break
 
         if not substituido:
@@ -167,7 +159,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
                             if substituir_em_paragrafo(p, original, adaptado):
                                 substituido = True
                                 total_substituicoes += 1
-                                relatorio.append(f"✅ Substituído em tabela: '{original[:45]}...'")
+                                relatorio.append(f"Substituido em tabela: {original[:40]}...")
                                 break
                         if substituido:
                             break
@@ -177,7 +169,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
                     break
 
         if not substituido:
-            relatorio.append(f"❌ Não localizado no documento: '{original[:45]}...'")
+            relatorio.append(f"Nao localizado: {original[:40]}...")
 
     buffer_saida = io.BytesIO()
     doc.save(buffer_saida)
@@ -187,7 +179,6 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list):
 def gerar_documento_texto(titulo: str, secoes: dict) -> io.BytesIO:
     doc = Document()
     doc.add_heading(titulo, level=1)
-    
     for subtitulo, conteudo in secoes.items():
         doc.add_heading(subtitulo, level=2)
         if isinstance(conteudo, list):
@@ -200,7 +191,6 @@ def gerar_documento_texto(titulo: str, secoes: dict) -> io.BytesIO:
                 p.add_run(str(v))
         else:
             doc.add_paragraph(str(conteudo))
-            
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -219,24 +209,28 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                 bytes_docx = arquivo_upload.read()
                 headers_auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
 
-                st.write("📤 Enviando documento institucional...")
+                st.write("Enviando documento institucional...")
                 files = {
-                    'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                    'file': (
+                        arquivo_upload.name,
+                        io.BytesIO(bytes_docx),
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    )
                 }
                 resp_upload = requests.post(
-                    DIFY_UPLOAD_URL, 
-                    headers=headers_auth, 
-                    files=files, 
-                    data={'user': 'docente-web'}, 
+                    DIFY_UPLOAD_URL,
+                    headers=headers_auth,
+                    files=files,
+                    data={'user': 'docente-web'},
                     timeout=60
                 )
-                
+
                 if resp_upload.status_code not in [200, 201]:
                     status.update(label="Erro no upload", state="error")
                     st.error(f"Erro no upload: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
-                    st.write("🧠 Adaptando questões, gabaritos e critérios inclusivos...")
+                    st.write("Adaptando questoes e gerando diretrizes...")
 
                     payload = {
                         "inputs": {
@@ -254,8 +248,8 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     }
 
                     resposta = requests.post(
-                        DIFY_WORKFLOW_URL, 
-                        headers={**headers_auth, "Content-Type": "application/json"}, 
+                        DIFY_WORKFLOW_URL,
+                        headers={**headers_auth, "Content-Type": "application/json"},
                         json=payload,
                         stream=True,
                         timeout=600
@@ -263,13 +257,133 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
 
                     outputs_finais = None
                     erro_fluxo = None
-                    
+
                     for linha in resposta.iter_lines():
-                        if linha:
-                            linha_str = linha.decode('utf-8')
-                            if linha_str.startswith("data:"):
-                                corpo = linha_str[5:].strip()
-                                if corpo:
-                                    try:
-                                        dados_evento = json.loads(corpo)
-                                        evento = dados_evento.get("event
+                        if not linha:
+                            continue
+                        linha_str = linha.decode('utf-8')
+                        if not linha_str.startswith("data:"):
+                            continue
+                        corpo = linha_str[5:].strip()
+                        if not corpo:
+                            continue
+                        try:
+                            dados_evento = json.loads(corpo)
+                            evento = dados_evento.get("event")
+                            if evento == "workflow_finished":
+                                outputs_finais = dados_evento.get("data", {}).get("outputs", {})
+                            elif evento == "workflow_failed":
+                                erro_fluxo = dados_evento.get("data", {}).get("error") or dados_evento.get("message")
+                            elif evento == "node_started":
+                                no_nome = dados_evento.get("data", {}).get("title", "")
+                                if no_nome:
+                                    st.write(f"Etapa: {no_nome}...")
+                            elif evento == "node_finished":
+                                dados_no = dados_evento.get("data", {})
+                                if dados_no.get("status") == "failed":
+                                    erro_fluxo = f"Falha no nó {dados_no.get('title')}: {dados_no.get('error')}"
+                        except Exception:
+                            pass
+
+                    if erro_fluxo:
+                        status.update(label="Falha no processamento", state="error")
+                        st.error(f"Erro no Dify: {erro_fluxo}")
+                    elif not outputs_finais:
+                        status.update(label="Processamento sem saida", state="error")
+                        st.error("O fluxo concluiu sem gerar os dados de saida esperados.")
+                    else:
+                        resultado_perfis = outputs_finais.get("resultado_perfis", [])
+
+                        if not resultado_perfis:
+                            status.update(label="Sem dados gerados", state="error")
+                            st.warning("A variavel resultado_perfis retornou vazia.")
+                        else:
+                            buffer_zip = io.BytesIO()
+
+                            with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                                for idx, item_perfil in enumerate(resultado_perfis):
+                                    p_id = f"PERFIL_{idx + 1}"
+                                    if isinstance(item_perfil, dict) and "perfil_id" in item_perfil:
+                                        p_id = item_perfil["perfil_id"]
+
+                                    pares_adaptacao = extrair_pares_seguro(item_perfil)
+                                    docx_adaptado, total_subs, relatorio = aplicar_adaptacoes_docx(bytes_docx, pares_adaptacao)
+                                    nome_prova = f"{p_id}/Caderno_Prova_Adaptada_{p_id}.docx"
+                                    zip_file.writestr(nome_prova, docx_adaptado.getvalue())
+
+                                    docx_gabarito = gerar_documento_texto(
+                                        f"Gabarito e Rubrica Avaliativa - {p_id}",
+                                        {
+                                            "Diretrizes Gerais": "Correcao voltada ao dominio conceitual essencial.",
+                                            "Criterios de Acessibilidade": "Considerar a clareza e nao penalizar tempo motor ou disgrafia."
+                                        }
+                                    )
+                                    nome_gabarito = f"{p_id}/Gabarito_e_Rubrica_{p_id}.docx"
+                                    zip_file.writestr(nome_gabarito, docx_gabarito.getvalue())
+
+                                    docx_instrucoes = gerar_documento_texto(
+                                        f"Instrucoes de Aplicacao - {p_id}",
+                                        {
+                                            "Tempo Adicional": "Conceder ate 50% de acrescimo temporal.",
+                                            "Mediacao": "Permitir leitura de enunciados sem induzir respostas.",
+                                            "Ambiente": "Reduzir distratores visuais e auditivos."
+                                        }
+                                    )
+                                    nome_instrucoes = f"{p_id}/Instrucoes_Aplicacao_{p_id}.docx"
+                                    zip_file.writestr(nome_instrucoes, docx_instrucoes.getvalue())
+
+                                    st.session_state.resumo_geracao.append({
+                                        "perfil": p_id,
+                                        "alteracoes": total_subs,
+                                        "total_pares": len(pares_adaptacao)
+                                    })
+                                    st.session_state.detalhes_log.append({
+                                        "perfil": p_id,
+                                        "log": relatorio,
+                                        "pares": pares_adaptacao
+                                    })
+
+                            buffer_zip.seek(0)
+                            st.session_state.pacote_zip = buffer_zip.getvalue()
+                            status.update(label="Pacote pedagogico gerado com sucesso!", state="complete")
+
+            except Exception as e:
+                status.update(label="Erro no processamento", state="error")
+                st.error(f"Ocorreu um erro: {str(e)}")
+
+if st.session_state.pacote_zip:
+    st.divider()
+    st.subheader("📦 Pacote Pedagógico Pronto para Download")
+    st.markdown("O arquivo compactado contém, organizados por pasta de cada perfil:")
+    st.markdown("- Caderno de Prova Adaptado (`.docx` com layout original)")
+    st.markdown("- Gabarito e Rubrica Avaliativa (`.docx`)")
+    st.markdown("- Guia com Instruções de Aplicação para o Fiscal/Docente (`.docx`)")
+
+    st.download_button(
+        label="📥 Baixar Pacote Completo (.zip)",
+        data=st.session_state.pacote_zip,
+        file_name="Avaliacoes_Adaptadas_Pacote_Completo.zip",
+        mime="application/zip",
+        type="primary",
+        key="btn_zip_consolidado"
+    )
+
+    st.markdown("---")
+    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
+    for i, r in enumerate(st.session_state.resumo_geracao):
+        cols_metrica[i].metric(
+            label=f"Perfil: {r['perfil']}",
+            value=f"{r['alteracoes']} substituídas",
+            help=f"Total de pares detectados: {r['total_pares']}"
+        )
+
+    with st.expander("🔍 Auditoria detalhada das substituições"):
+        for d in st.session_state.detalhes_log:
+            st.markdown(f"### Perfil: {d['perfil']}")
+            if d['log']:
+                for linha in d['log']:
+                    st.text(linha)
+            else:
+                st.warning("Nenhum par de adaptação foi detectado para este perfil.")
+            st.markdown("**Pares aplicados:**")
+            st.json(d['pares'])
