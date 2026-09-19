@@ -37,7 +37,10 @@ if "resumo_geracao" not in st.session_state:
 if "detalhes_log" not in st.session_state:
     st.session_state.detalhes_log = []
 
-arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
+arquivo_upload = st.file_uploader(
+    "Selecione o arquivo da Prova Regular (.docx):", 
+    type=["docx"]
+)
 
 contexto_turma_padrao = """[
   {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
@@ -76,7 +79,10 @@ def substituir_em_paragrafo(paragrafo, texto_antigo: str, texto_novo: str) -> bo
     p_limpo = limpar_string(texto_p)
 
     if texto_antigo in texto_p:
-        preencher_paragrafo_com_markdown(paragrafo, texto_p.replace(texto_antigo, texto_novo))
+        preencher_paragrafo_com_markdown(
+            paragrafo, 
+            texto_p.replace(texto_antigo, texto_novo)
+        )
         return True
 
     if antigo_limpo in p_limpo or p_limpo in antigo_limpo:
@@ -132,8 +138,16 @@ def extrair_dados_perfil(bloco_bruto):
     for elem in itens_adaptados:
         if not isinstance(elem, dict):
             continue
-        orig = elem.get("texto_original") or elem.get("enunciado_original") or elem.get("original") or ""
-        adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
+        orig = (
+            elem.get("texto_original") or 
+            elem.get("enunciado_original") or 
+            elem.get("original") or ""
+        )
+        adapt = (
+            elem.get("texto_adaptado") or 
+            elem.get("enunciado_adaptado") or 
+            elem.get("adaptado") or ""
+        )
         num = elem.get("numero_item") or elem.get("item") or len(pares) + 1
         
         orig_s = str(orig).strip()
@@ -214,14 +228,14 @@ def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
         else:
             nivel_bloom = "Lembrar / Identificar (Nível 1)"
 
-    barreira = "Sobrecarga de memória operacional e dispersão atencional decorrente de enunciado denso."
-    ajuste = "Segmentação em comandos unitários com destaque visual nos verbos de ação para orientar o foco executivo."
-    criterio_perfil = "Aceitar respostas sintéticas e estruturadas em tópicos. Priorizar a precisão do conceito sobre o volume textual."
+    barreira = "Sobrecarga de memória operacional decorrente de enunciado denso."
+    ajuste = "Segmentação em comandos unitários com destaque visual nos verbos de ação."
+    criterio_perfil = "Aceitar respostas sintéticas em tópicos, priorizando o rigor do conceito."
 
     if "TEA" in perfil_id.upper():
-        barreira = "Ambiguidade na interpretação de comandos múltiplos e esforço excessivo com linguagem implícita ou figurada."
-        ajuste = "Linearização da ordem dos comandos, uso de termos diretos e eliminação de duplos sentidos nas premissas."
-        criterio_perfil = "Valorizar respostas literais e diretas. Não exigir floreios discursivos ou inferências não explícitas no comando."
+        barreira = "Ambiguidade na interpretação de comandos múltiplos e termos implícitos."
+        ajuste = "Linearização dos comandos, vocabulário direto e eliminação de duplos sentidos."
+        criterio_perfil = "Valorizar respostas literais e diretas, sem exigir floreios discursivos."
 
     return {
         "bloom": nivel_bloom,
@@ -232,7 +246,6 @@ def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
 
 def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io.BytesIO:
     doc = Document()
-    
     for section in doc.sections:
         section.top_margin = Inches(1.0)
         section.bottom_margin = Inches(1.0)
@@ -242,20 +255,20 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
     p_title = doc.add_paragraph()
     run_title = p_title.add_run("Gabarito Orientado & Matriz de Correção Analítica")
     run_title.font.name = 'Calibri'
-    run_title.font.size = Pt(20)
+    run_title.font.size = Pt(18)
     run_title.font.bold = True
     run_title.font.color.rgb = RGBColor(24, 43, 73)
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     p_sub = doc.add_paragraph()
-    run_sub = p_sub.add_run(f"Instrumento Técnico de Avaliação Diferenciada | Perfil de Referência: {perfil_id}")
+    run_sub = p_sub.add_run(f"Instrumento Técnico de Avaliação Diferenciada | Perfil: {perfil_id}")
     run_sub.font.name = 'Calibri'
     run_sub.font.size = Pt(11)
     run_sub.font.italic = True
     run_sub.font.color.rgb = RGBColor(80, 80, 80)
     p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
     doc.add_heading("1. Fundamentação Pedagógica & Princípios Avaliativos", level=1)
     p_fund = doc.add_paragraph(
@@ -265,7 +278,7 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
         "ao enunciado, mantendo integral o construto avaliativo e o rigor conceitual esperado para o componente curricular."
     )
     p_fund.paragraph_format.line_spacing = 1.15
-    p_fund.paragraph_format.space_after = Pt(14)
+    p_fund.paragraph_format.space_after = Pt(12)
 
     doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
 
@@ -273,9 +286,9 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
         num = par.get("numero", idx + 1)
         meta = inferir_metadados_psicometricos(par, perfil_id)
 
-        h2 = doc.add_heading(f"Item #{num} — Análise Cognitiva & Parâmetros de Desempenho", level=2)
-        h2.paragraph_format.space_before = Pt(16)
-        h2.paragraph_format.space_after = Pt(6)
+        h2 = doc.add_heading(f"Item #{num} — Análise Cognitiva & Critérios", level=2)
+        h2.paragraph_format.space_before = Pt(14)
+        h2.paragraph_format.space_after = Pt(4)
 
         tabela = doc.add_table(rows=6, cols=2)
         tabela.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -288,9 +301,9 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
             ("Nível Taxonômico (Bloom):", meta["bloom"]),
             ("Enunciado Original:", par["original"]),
             ("Enunciado Adaptado:", par["adaptado"]),
-            ("Barreira Instrumental Mitigada:", meta["barreira"]),
-            ("Intervenção Didática Aplicada:", meta["ajuste"]),
-            ("Diretriz Específica para o Docente:", meta["criterio_perfil"])
+            ("Barreira Mitigada:", meta["barreira"]),
+            ("Intervenção Aplicada:", meta["ajuste"]),
+            ("Diretriz Docente:", meta["criterio_perfil"])
         ]
 
         for i, (rotulo, valor) in enumerate(dados_tabela):
@@ -300,9 +313,8 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
             p_r = c_rotulo.paragraphs[0]
             r_run = p_r.add_run(rotulo)
             r_run.font.name = 'Calibri'
-            r_run.font.size = Pt(10)
+            r_run.font.size = Pt(9.5)
             r_run.font.bold = True
-            r_run.font.color.rgb = RGBColor(30, 30, 30)
             definir_celula_fundo(c_rotulo, "F0F2F5")
 
             c_val = linha.cells[1]
@@ -310,17 +322,16 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
             p_v = c_val.paragraphs[0]
             v_run = p_v.add_run(str(valor))
             v_run.font.name = 'Calibri'
-            v_run.font.size = Pt(10)
-            v_run.font.color.rgb = RGBColor(40, 40, 40)
+            v_run.font.size = Pt(9.5)
 
-        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
         doc.add_heading(f"Rubrica de Desempenho Gradual — Item #{num}", level=3)
         tab_rubrica = doc.add_table(rows=4, cols=3)
         tab_rubrica.alignment = WD_TABLE_ALIGNMENT.CENTER
         tab_rubrica.autofit = False
 
-        headers = ["Nível de Conquista", "Critérios Conceituais Observáveis", "Ponderação Sugerida"]
+        headers = ["Nível", "Critérios Conceituais Observáveis", "Ponderação"]
         larguras_rubrica = [Inches(1.8), Inches(3.6), Inches(1.1)]
 
         for c_idx, texto_h in enumerate(headers):
@@ -329,30 +340,29 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
             p_h = cel.paragraphs[0]
             r_h = p_h.add_run(texto_h)
             r_h.font.name = 'Calibri'
-            r_h.font.size = Pt(9.5)
+            r_h.font.size = Pt(9)
             r_h.font.bold = True
             r_h.font.color.rgb = RGBColor(255, 255, 255)
             definir_celula_fundo(cel, "1F3864")
 
         niveis_data = [
             (
-                "Desempenho Pleno (Excelente)",
-                "Mobiliza com precisão os conceitos solicitados nos comandos segmentados. Identifica, explica ou relaciona as variáveis essenciais requeridas, sem necessidade de estrutura formal extensa.",
+                "Desempenho Pleno",
+                "Mobiliza com precisão os conceitos solicitados nos comandos segmentados. Identifica e explica os elementos requeridos com clareza objetiva.",
                 "90% a 100%"
             ),
             (
-                "Desempenho Parcial (Suficiente)",
-                "Demonstra compreensão do núcleo central do conceito, respondendo corretamente à maioria dos subcomandos, com omissão pontual de elementos secundários ou menor articulação teórica.",
+                "Desempenho Parcial",
+                "Demonstra compreensão do núcleo central, respondendo corretamente à maioria dos subcomandos com omissão pontual de elementos secundários.",
                 "50% a 70%"
             ),
             (
                 "Desempenho Insuficiente",
-                "Apresenta equívocos conceituais substantivos, fuga ao tema proposto ou ausência de nexo entre os fenômenos solicitados na questão.",
+                "Apresenta equívocos conceituais substantivos, fuga ao tema ou ausência de articulação entre os conceitos requeridos.",
                 "0% a 30%"
             )
         ]
 
-        cores_linhas = ["FFFFFF", "F9FAFC", "FFFFFF"]
         for r_idx, (nivel, desc, pond) in enumerate(niveis_data, start=1):
             row = tab_rubrica.rows[r_idx]
             valores = [nivel, desc, pond]
@@ -362,12 +372,12 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
                 p = cel.paragraphs[0]
                 run = p.add_run(val)
                 run.font.name = 'Calibri'
-                run.font.size = Pt(9)
+                run.font.size = Pt(8.5)
                 if c_idx == 0:
                     run.font.bold = True
-                definir_celula_fundo(cel, cores_linhas[r_idx - 1])
+                definir_celula_fundo(cel, "FFFFFF" if r_idx % 2 != 0 else "F9FAFC")
 
-        doc.add_paragraph().paragraph_format.space_after = Pt(16)
+        doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
     doc.add_heading("3. Diretrizes para Feedback Formativo Pós-Avaliação", level=1)
     p_feed = doc.add_paragraph(
@@ -383,16 +393,13 @@ def gerar_rubrica_analitica_sofisticada(perfil_id: str, lista_pares: list) -> io
     return buffer
 
 def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.BytesIO:
-    """Gera um protocolo executivo, estruturado e com rigor psicopedagógico para aplicação de prova."""
     doc = Document()
-    
     for s in doc.sections:
         s.top_margin = Inches(1.0)
         s.bottom_margin = Inches(1.0)
         s.left_margin = Inches(1.0)
         s.right_margin = Inches(1.0)
 
-    # Cabeçalho Oficial
     p_t = doc.add_paragraph()
     r_t = p_t.add_run("Protocolo Oficial de Aplicação & Mediação Avaliativa")
     r_t.font.name = 'Calibri'
@@ -402,7 +409,7 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
     p_t.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     p_sub = doc.add_paragraph()
-    r_sub = p_sub.add_run(f"Diretrizes Técnicas de Sala para o Fiscal e Docente | Perfil Funcional: {perfil_id}")
+    r_sub = p_sub.add_run(f"Diretrizes Técnicas de Sala para o Fiscal e Docente | Perfil: {perfil_id}")
     r_sub.font.name = 'Calibri'
     r_sub.font.size = Pt(11)
     r_sub.font.italic = True
@@ -411,9 +418,7 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
 
     doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
-    # Quadro 1: Ficha de Parametrização Técnica
     doc.add_heading("1. Ficha de Parametrização & Registro de Sala", level=1)
-    
     tab_ficha = doc.add_table(rows=4, cols=2)
     tab_ficha.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_ficha.autofit = False
@@ -444,16 +449,14 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
         r1.font.name = 'Calibri'
         r1.font.size = Pt(9.5)
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
-    # Seção 2: Matriz Operacional de Acomodações
     doc.add_heading("2. Matriz Operacional de Acomodações Avaliativas", level=1)
-    
     tab_acomod = doc.add_table(rows=4, cols=3)
     tab_acomod.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_acomod.autofit = False
 
-    headers_ac = ["Dimensão", "Parâmetro Operacional Homologado", "Justificativa Neurocognitiva"]
+    headers_ac = ["Dimensão", "Parâmetro Homologado", "Justificativa Neurocognitiva"]
     larguras_ac = [Inches(1.8), Inches(2.6), Inches(2.1)]
 
     for c_idx, h_txt in enumerate(headers_ac):
@@ -467,23 +470,22 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
         run.font.color.rgb = RGBColor(255, 255, 255)
         definir_celula_fundo(cel, "1F3864")
 
-    # Customização técnica por perfil
-    tempo_just = "Compensa a velocidade de decodificação e processamento grafo-motor sem alterar o rigor epistemológico."
-    espaco_param = "Posicionamento preferencial nas primeiras fileiras ou em sala de aplicação com baixa densidade de estímulos visuais e auditivos."
-    espaco_just = "Previne sobrecarga sensorial e descontinuidade atencional frente a ruídos de movimentação."
+    tempo_just = "Compensa o tempo de processamento grafo-motor sem alterar o rigor acadêmico."
+    espaco_param = "Assento nas primeiras fileiras ou sala com menor densidade de estímulos concorrentes."
+    espaco_just = "Previne sobrecarga sensorial e descontinuidade atencional frente a ruídos externos."
     
     if "TDAH" in perfil_id.upper():
-        pausa_param = "Pausas breves de autorregulação (3 a 5 minutos) a cada 45 minutos de execução contínua."
-        pausa_just = "Favorece o restabelecimento da memória de trabalho e mitiga o desgaste executivo por sustentação de foco prolongado."
+        pausa_param = "Pausas breves de autorregulação (3 a 5 min) a cada 45 min de execução."
+        pausa_just = "Favorece o restabelecimento da memória de trabalho e mitiga o desgaste executivo."
     elif "TEA" in perfil_id.upper():
-        pausa_param = "Pausas programadas para descompressão sensorial, com permanência em ambiente calmo se necessário."
-        pausa_just = "Previne crises de sobrecarga sensorial ou exaustão por saturação ambiental."
+        pausa_param = "Pausas programadas para descompressão sensorial em ambiente calmo."
+        pausa_just = "Previne crises de sobrecarga sensorial ou exaustão por saturação do ambiente."
     else:
-        pausa_param = "Pausas regulares a critério do estudante, registradas em ata de prova."
-        pausa_just = "Favorece a manutenção da precisão motora e o foco atencional."
+        pausa_param = "Pausas regulares a critério do estudante com registro em ata."
+        pausa_just = "Favorece a manutenção do foco e a precisão na escrita."
 
     acomod_linhas = [
-        ("Acréscimo Temporal", "Até 50% de tempo adicional além da duração regular da turma.", tempo_just),
+        ("Acréscimo Temporal", "Até 50% de tempo adicional além da duração regular.", tempo_just),
         ("Ergonomia Espacial", espaco_param, espaco_just),
         ("Pausas Programadas", pausa_param, pausa_just)
     ]
@@ -496,23 +498,20 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
             p = cel.paragraphs[0]
             run = p.add_run(txt)
             run.font.name = 'Calibri'
-            run.font.size = Pt(9)
+            run.font.size = Pt(8.5)
             if c_idx == 0:
                 run.font.bold = True
             definir_celula_fundo(cel, "FFFFFF" if r_idx % 2 != 0 else "F9FAFC")
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(14)
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
-    # Seção 3: Protocolo de Mediação de Sala (Permitido vs. Vedado)
     doc.add_heading("3. Limiares de Mediação: Condutas Autorizadas e Vedações", level=1)
-    
     tab_mediacao = doc.add_table(rows=5, cols=2)
     tab_mediacao.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_mediacao.autofit = False
 
     larguras_med = [Inches(3.25), Inches(3.25)]
-
-    h_med = ["Condutas Autorizadas (Mediação Válida)", "Condutas Vedadas (Comprometimento de Fidedignidade)"]
+    h_med = ["Condutas Autorizadas (Mediação Válida)", "Condutas Vedadas (Compromete Fidedignidade)"]
     for c_idx, h_txt in enumerate(h_med):
         cel = tab_mediacao.rows[0].cells[c_idx]
         cel.width = larguras_med[c_idx]
@@ -526,20 +525,20 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
 
     regras_mediacao = [
         (
-            "Leitura Mediada de Enunciados: O fiscal pode reler comandos pausadamente, atendo-se exatamente às palavras impressas no caderno adaptado.",
-            "Parafrasear Conceitos Acadêmicos: É vedado reescrever, explicar o significado de teorias ou dar pistas sobre o tema cobrado na questão."
+            "Leitura Mediada de Enunciados: Reler comandos pausadamente, atendo-se ao texto do caderno adaptado.",
+            "Parafrasear Conceitos: É vedado reescrever ou dar pistas sobre o tema acadêmico cobrado."
         ),
         (
-            "Esclarecimento de Comandos Metodológicos: É permitido clarificar o que significa o verbo de ação (ex.: 'identifique', 'relacione').",
-            "Validar Respostas Parciais: É estritamente proibido emitir pareceres como 'está no caminho certo' ou 'leia de novo porque está faltando algo'."
+            "Esclarecer Termos de Comando: Permitido clarificar o verbo de ação metodológico (ex.: 'relacione').",
+            "Validar Respostas: Estritamente proibido dizer 'está no caminho certo' ou sugerir revisões induzidas."
         ),
         (
-            "Autorização de Recursos de Apoio: Permitir folhas de rascunho sem limites para esquemas mentais, marca-textos coloridos e réguas guia.",
-            "Impor Padrão Gráfico Rígido: Não coagir o aluno a preencher rascunhos em prosa quando ele preferir esquematizar em tópicos ou bullet points."
+            "Recursos de Apoio: Permitir folhas de rascunho sem limites, marca-textos coloridos e réguas guia.",
+            "Impor Padrão Gráfico Rígido: Não coagir o estudante a escrever em prosa contínua se ele optar por tópicos."
         ),
         (
-            "Sinalização Suave de Tempo: Avisar periodicamente o tempo restante de forma individual e serena, evitando avisos abruptos para a sala toda.",
-            "Pressão por Celeridade: Nunca induzir o estudante a acelerar a escrita com comparações ao ritmo de término de outros alunos da turma."
+            "Sinalização Individual de Tempo: Avisar o tempo restante de forma discreta, sem alarmar a turma toda.",
+            "Pressão por Celeridade: Nunca induzir o aluno a acelerar com comparações ao término de outros colegas."
         )
     ]
 
@@ -554,23 +553,20 @@ def gerar_protocolo_aplicacao_avancado(perfil_id: str, lista_pares: list) -> io.
             run.font.size = Pt(8.5)
             definir_celula_fundo(cel, "F2F7FA" if c_idx == 0 else "FDF2F2")
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(14)
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
 
-    # Seção 4: Manejo de Ansiedade e Sobrecarga Cognitiva
-    doc.add_heading("4. Protocolo de Contingência: Sobrecarga & Ansiedade Avaliativa", level=1)
+    doc.add_heading("4. Protocolo de Contingência: Sobrecarga & Ansiedade", level=1)
     p_crise = doc.add_paragraph(
         "Caso o estudante manifeste sinais de bloqueio atencional, agitação psicomotora, sobrecarga sensorial ou crise ansiosa:\n"
-        "1. Interrupção Neutra: Convide o estudante a afastar-se momentaneamente da folha de prova, sem chamar a atenção dos demais colegas.\n"
-        "2. Pausa Hídrica / Descompressão: Permita a ingestão de água e respiração consciente fora da sala de prova por até 5 minutos.\n"
-        "3. Retomada sem Pressão: Ao regressar, oriente-o a retomar por um item que considere mais acessível, restabelecendo a autoconfiança executiva.\n"
-        "4. Registro Obrigatório: Qualquer intercorrência atípica deve ser descrita objetivamente no Termo de Encerramento abaixo."
+        "1. Interrupção Neutra: Convide o estudante a afastar-se momentaneamente da folha de prova de forma discreta.\n"
+        "2. Pausa Hídrica / Descompressão: Permita ingestão de água e respiração consciente fora da sala por até 5 minutos.\n"
+        "3. Retomada sem Pressão: Ao regressar, oriente-o a reiniciar por um item considerado mais acessível.\n"
+        "4. Registro Obrigatório: Qualquer intercorrência atípica deve ser descrita no Termo de Encerramento abaixo."
     )
     p_crise.paragraph_format.line_spacing = 1.15
-    p_crise.paragraph_format.space_after = Pt(14)
+    p_crise.paragraph_format.space_after = Pt(10)
 
-    # Seção 5: Termo de Encerramento e Assinaturas
-    doc.add_heading("5. Termo de Encerramento & Conformidade da Aplicação", level=1)
-    
+    doc.add_heading("5. Termo de Encerramento & Conformidade", level=1)
     tab_termo = doc.add_table(rows=3, cols=1)
     tab_termo.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_termo.autofit = False
@@ -697,4 +693,92 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                         status.update(label="Falha no processamento", state="error")
                         st.error(f"Erro no Dify: {erro_fluxo}")
                     elif not outputs_finais:
-                        status.update(
+                        status.update(label="Processamento sem saída", state="error")
+                        st.error("O fluxo concluiu sem gerar os dados de saída esperados.")
+                    else:
+                        resultado_perfis = outputs_finais.get("resultado_perfis", [])
+
+                        if not resultado_perfis:
+                            status.update(label="Sem dados gerados", state="error")
+                            st.warning("A variável resultado_perfis retornou vazia.")
+                        else:
+                            buffer_zip = io.BytesIO()
+
+                            with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                                for idx, item_perfil in enumerate(resultado_perfis):
+                                    p_id = f"PERFIL_{idx + 1}"
+                                    if isinstance(item_perfil, dict) and "perfil_id" in item_perfil:
+                                        p_id = item_perfil["perfil_id"]
+
+                                    pares_adaptacao = extrair_dados_perfil(item_perfil)
+                                    
+                                    # 1. Caderno de Prova Adaptada (.docx)
+                                    docx_adaptado, total_subs, relatorio = aplicar_adaptacoes_docx(bytes_docx, pares_adaptacao)
+                                    nome_prova = f"{p_id}/Caderno_Prova_Adaptada_{p_id}.docx"
+                                    zip_file.writestr(nome_prova, docx_adaptado.getvalue())
+
+                                    # 2. Gabarito & Matriz de Correção Analítica (.docx)
+                                    docx_gabarito = gerar_rubrica_analitica_sofisticada(p_id, pares_adaptacao)
+                                    nome_gabarito = f"{p_id}/Gabarito_e_Rubrica_Analitica_{p_id}.docx"
+                                    zip_file.writestr(nome_gabarito, docx_gabarito.getvalue())
+
+                                    # 3. Protocolo Oficial de Aplicação & Mediação (.docx)
+                                    docx_instrucoes = gerar_protocolo_aplicacao_avancado(p_id, pares_adaptacao)
+                                    nome_instrucoes = f"{p_id}/Protocolo_Oficial_Aplicacao_{p_id}.docx"
+                                    zip_file.writestr(nome_instrucoes, docx_instrucoes.getvalue())
+
+                                    st.session_state.resumo_geracao.append({
+                                        "perfil": p_id,
+                                        "alteracoes": total_subs,
+                                        "total_pares": len(pares_adaptacao)
+                                    })
+                                    st.session_state.detalhes_log.append({
+                                        "perfil": p_id,
+                                        "log": relatorio,
+                                        "pares": pares_adaptacao
+                                    })
+
+                            buffer_zip.seek(0)
+                            st.session_state.pacote_zip = buffer_zip.getvalue()
+                            status.update(label="Pacote pedagógico gerado com sucesso!", state="complete")
+
+            except Exception as e:
+                status.update(label="Erro no processamento", state="error")
+                st.error(f"Ocorreu um erro: {str(e)}")
+
+if st.session_state.pacote_zip:
+    st.divider()
+    st.subheader("📦 Pacote Pedagógico Pronto para Download")
+    st.markdown("O arquivo compactado contém, organizados por pasta de cada perfil:")
+    st.markdown("- **Caderno de Prova Adaptado** (`.docx` com layout institucional preservado)")
+    st.markdown("- **Gabarito & Matriz de Correção Analítica** (`.docx` com psicometria e rubricas de 3 níveis)")
+    st.markdown("- **Protocolo Oficial de Aplicação & Mediação** (`.docx` estruturado para docente e fiscal)")
+
+    st.download_button(
+        label="📥 Baixar Pacote Completo (.zip)",
+        data=st.session_state.pacote_zip,
+        file_name="Avaliacoes_Adaptadas_Pacote_Completo.zip",
+        mime="application/zip",
+        type="primary",
+        key="btn_zip_consolidado"
+    )
+
+    st.markdown("---")
+    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
+    for i, r in enumerate(st.session_state.resumo_geracao):
+        cols_metrica[i].metric(
+            label=f"Perfil: {r['perfil']}",
+            value=f"{r['alteracoes']} substituídas",
+            help=f"Total de pares detectados: {r['total_pares']}"
+        )
+
+    with st.expander("🔍 Auditoria detalhada das substituições"):
+        for d in st.session_state.detalhes_log:
+            st.markdown(f"### Perfil: {d['perfil']}")
+            if d['log']:
+                for linha in d['log']:
+                    st.text(linha)
+            else:
+                st.warning("Nenhum par de adaptação foi detectado para este perfil.")
+            st.markdown("**Pares aplicados:**")
+            st.json(d['pares'])
