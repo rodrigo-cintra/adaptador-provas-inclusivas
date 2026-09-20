@@ -13,13 +13,12 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-st.set_page_config(page_title="Adaptador Acadêmico Inclusivo", page_icon="🎓", layout="centered")
+st.set_page_config(page_title="Adaptador Académico Inclusivo", page_icon="🎓", layout="centered")
 
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva, calculando a melhor modelagem pedagógica: manutenção com 
-tempo estendido ou sintetização algorítmica de construto mantendo a duração regular.
+cognitiva e gerará os cadernos nominais, rubricas analíticas e protocolos de aplicação num único pacote compactado.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -54,6 +53,9 @@ contexto_turma_padrao = """[
 ]"""
 
 contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=110)
+
+# Botão posicionado de forma visível e direta na interface
+disparar = st.button("🚀 Gerar Pacote Pedagógico Completo", type="primary", use_container_width=True)
 
 # ----------------- FUNÇÕES AUXILIARES -----------------
 
@@ -232,10 +234,10 @@ def executar_otimizacao_psicometrica(pares_todos: list):
             "itens_suprimidos": [],
             "aviso_critico": (
                 f"⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas {total} itens. "
-                "Qualquer corte causaria perda substancial de construto acadêmico. "
+                "Qualquer corte causaria perda substancial de construto académico. "
                 "O sistema manteve todos os itens e recomenda TEMPO ESTENDIDO (+50%)."
             ),
-            "justificativa": "Densidade amostral mínima; redução invalidaria a aferição dos objetivos de aprendizagem."
+            "justificativa": "Densidade amostral mínima; a redução invalidaria a aferição dos objetivos de aprendizagem."
         }
 
     alvo_manter = max(3, int(round(total * 0.65)))
@@ -255,13 +257,13 @@ def executar_otimizacao_psicometrica(pares_todos: list):
     aviso = None
     if perda_topo:
         aviso = (
-            "⚠️ ALERTA DE COBERTURA TAXONÔMICA: A sintetização eliminou dimensões analíticas essenciais. "
+            "⚠️ ALERTA DE COBERTURA TAXONÓMICA: A sintetização eliminou dimensões analíticas essenciais. "
             "Recomenda-se formalmente adotar TEMPO ADICIONAL para este perfil."
         )
 
     justificativa = (
         f"A matriz de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
-        "Foram suprimidos itens redundantes de menor discriminação, preservando os níveis taxonômicos "
+        "Foram suprimidos itens redundantes de menor discriminação, preservando os níveis taxonómicos "
         "superiores. Essa intervenção previne a saturação da memória de trabalho sem degradar o construto."
     )
 
@@ -301,27 +303,4 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
                         for p in cell.paragraphs:
                             if substituir_em_paragrafo(p, orig, adapt):
                                 sub = True
-                                total_subs += 1
-                                logs.append(f"Substituído em tabela: {orig[:40]}...")
-                                break
-                        if sub:
-                            break
-                    if sub:
-                        break
-                if sub:
-                    break
-        if not sub:
-            logs.append(f"Não localizado: {orig[:40]}...")
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf, total_subs, logs
-
-def set_fundo(cel, cor_hex):
-    tcPr = cel._element.get_or_add_tcPr()
-    shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
-    shd.set(qn('w:color'), 'auto')
-    shd.set(qn('w:fill'), cor_hex)
-    tcPr
+                                total
