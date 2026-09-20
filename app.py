@@ -17,9 +17,9 @@ st.set_page_config(page_title="Adaptador Acadêmico Inclusivo", page_icon="🎓"
 
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
-Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva com invariância estilística, garantindo a adaptação integral 
-e individualizada dos cadernos nominais, matrizes psicométricas e protocolos de sala.
+Carregue a avaliação em formato **.docx**. Selecione a estratégia de acomodação temporal 
+(tempo estendido ou redução quantitativa com equivalência de construto) para gerar 
+cadernos nominais, rubricas analíticas e protocolos oficiais consolidados em arquivo `.zip`.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -35,12 +35,40 @@ if "detalhes_log" not in st.session_state:
 
 arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
 
+# Seletor de Estratégia de Acomodação
+col_est1, col_est2 = st.columns(2)
+with col_est1:
+    estrategia_tempo = st.selectbox(
+        "Estratégia de Acomodação de Ritmo/Tempo:",
+        options=[
+            "Tempo Adicional Regulamentar (+50% de duração)",
+            "Mesmo Tempo de Sala com Redução Quantitativa de Itens"
+        ],
+        help="A redução de itens evita fadiga executiva grave em estudantes com tolerância atencional reduzida."
+    )
+
+modo_reducao = "Redução Quantitativa" in estrategia_tempo
+
+with col_est2:
+    if modo_reducao:
+        itens_a_manter = st.number_input(
+            "Quantidade de questões a manter na prova adaptada:",
+            min_value=2,
+            max_value=10,
+            value=4,
+            step=1,
+            help="O sistema selecionará os itens nucleares de maior valor epistemológico."
+        )
+    else:
+        st.info("Serão mantidos 100% dos itens da prova com até 50% de acréscimo temporal no protocolo.")
+        itens_a_manter = 999
+
 contexto_turma_padrao = """[
   {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
   {"perfil_id": "TEA_SUPORTE1", "alunos": ["Beatriz Mendes"]}
 ]"""
 
-contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=120)
+contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=110)
 
 def sanitizar_nome(s: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]', '_', str(s).strip())
@@ -64,7 +92,6 @@ def preencher_md(paragrafo, texto_formatado: str):
             paragrafo.add_run(parte)
 
 def fragmentar_comandos(texto: str) -> list:
-    """Extrai comandos isolados (como a), b), A), B)) caso o LLM agrupe em uma única string."""
     partes = re.split(r'(\b[a-dA-D]\)\s+)', texto)
     if len(partes) <= 1:
         return [texto]
@@ -138,6 +165,16 @@ def injetar_nome(doc: Document, aluno: str):
     r2.bold = True
     r2.font.color.rgb = RGBColor(24, 43, 73)
 
+def remover_item_do_documento(doc: Document, texto_alvo: str):
+    """Remove parágrafos ou trechos de itens suprimidos no modo de prova reduzida."""
+    alvo_limpo = limpar_str(texto_alvo)
+    if not alvo_limpo or len(alvo_limpo) < 10:
+        return
+    for p in list(doc.paragraphs):
+        txt_p = limpar_str(texto_consolidado(p))
+        if alvo_limpo in txt_p or (len(alvo_limpo) > 18 and difflib.SequenceMatcher(None, alvo_limpo, txt_p).ratio() >= 0.70):
+            p._element.getparent().remove(p._element)
+
 def extrair_pares_resiliente(bloco):
     if isinstance(bloco, dict) and "conteudo" in bloco:
         bloco = bloco["conteudo"]
@@ -187,13 +224,20 @@ def extrair_pares_resiliente(bloco):
             pares.append({"numero": num, "original": s_orig, "adaptado": s_adapt, "raw": elem})
     return pares
 
-def aplicar_docx_integral(bytes_docx, pares: list, aluno: str = None):
+def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_suprimidos: list = None):
     doc = Document(io.BytesIO(bytes_docx))
     total_subs, logs = 0, []
     if aluno:
         injetar_nome(doc, aluno)
         logs.append(f"Nome '{aluno}' inserido.")
 
+    # 1. Se houver redução, suprime fisicamente os itens não selecionados
+    if pares_suprimidos:
+        for p_sup in pares_suprimidos:
+            remover_item_do_documento(doc, p_sup["original"])
+        logs.append(f"Redução quantitativa aplicada: {len(pares_suprimidos)} itens suprimidos para ajuste atencional.")
+
+    # 2. Aplica as adaptações nos itens mantidos
     for par in pares:
         orig, adapt = par["original"], par["adaptado"]
         sub = False
@@ -266,7 +310,7 @@ def meta_psico(par, pid: str) -> dict:
         "criterio": raw.get("criterio_especifico") or crit
     }
 
-def gerar_rubrica(pid: str, pares: list, aluno: str = None) -> io.BytesIO:
+def gerar_rubrica(pid: str, pares: list, aluno: str = None, modo_reducao: bool = False, total_orig: int = 0) -> io.BytesIO:
     doc = Document()
     for s in doc.sections:
         s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
@@ -285,10 +329,19 @@ def gerar_rubrica(pid: str, pares: list, aluno: str = None) -> io.BytesIO:
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.add_heading("1. Fundamentação Pedagógica & Princípios Avaliativos", level=1)
-    doc.add_paragraph(
+    
+    texto_fund = (
         "Este documento estabelece a matriz de correção técnica para o caderno adaptado, assegurando o princípio "
         "da equivalência cognitiva preconizado pelo Desenho Universal para a Aprendizagem (DUA)."
     )
+    if modo_reducao:
+        texto_fund += (
+            f"\n\n[PARECER DE REDUÇÃO QUANTITATIVA]: A prova regular continha {total_orig} itens e foi reestruturada "
+            f"para {len(pares)} itens nucleares mantendo a mesma duração da turma. Com base na Teoria da Resposta ao Item "
+            "e no controle de fadiga cognitiva executiva, a redução amostral preserva a totalidade das competências "
+            "essenciais sem penalizar o estudante por déficits de sustentação atencional prolongada."
+        )
+    doc.add_paragraph(texto_fund)
 
     doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
     for idx, par in enumerate(pares):
@@ -344,14 +397,14 @@ def gerar_rubrica(pid: str, pares: list, aluno: str = None) -> io.BytesIO:
                 set_fundo(c, "FFFFFF" if ri % 2 != 0 else "F9FAFC")
 
     doc.add_heading("3. Diretrizes para Feedback Formativo", level=1)
-    doc.add_paragraph("Pontuar conceitos atingidos e oportunizar esclarecimento oral breve em caso de concisão.")
+    doc.add_paragraph("Pontuar conceitos atingidos e oportunizar esclarecimento oral breve em caso de concisão extrema.")
 
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
     return buf
 
-def gerar_protocolo(pid: str, aluno: str = None) -> io.BytesIO:
+def gerar_protocolo(pid: str, aluno: str = None, modo_reducao: bool = False, total_itens_mantidos: int = 0) -> io.BytesIO:
     doc = Document()
     for s in doc.sections:
         s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
@@ -370,15 +423,27 @@ def gerar_protocolo(pid: str, aluno: str = None) -> io.BytesIO:
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     doc.add_heading("1. Ficha de Parametrização & Registro de Sala", level=1)
-    tab_f = doc.add_table(rows=4, cols=2)
+    tab_f = doc.add_table(rows=5, cols=2)
     tab_f.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_f.autofit = False
+
+    tempo_desc = (
+        "Mesmo tempo de sala da turma regular (Sem acréscimo temporal devido à redução de itens)" 
+        if modo_reducao else 
+        "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido de até +50%)"
+    )
+    estrat_desc = (
+        f"Redução quantitativa para {total_itens_mantidos} questões com equivalência cognitiva integral."
+        if modo_reducao else
+        "Manutenção integral dos itens com concessão de tempo estendido."
+    )
 
     dados_f = [
         ("Estudante Beneficiário:", aluno if aluno else "Conforme lista homologada"),
         ("Perfil Funcional Alvo:", f"{pid} (Equivalência Cognitiva DUA)"),
+        ("Estratégia Homologada:", estrat_desc),
         ("Responsável / Fiscal:", "________________________________________________________"),
-        ("Horário Previsto:", "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido)")
+        ("Duração / Horário Previsto:", tempo_desc)
     ]
     for i, (c, v) in enumerate(dados_f):
         c0, c1 = tab_f.rows[i].cells[0], tab_f.rows[i].cells[1]
@@ -453,7 +518,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     st.error(f"Erro no upload: {resp_up.text}")
                 else:
                     fid = resp_up.json().get("id")
-                    st.write("Adaptando 100% das questões com invariância estilística...")
+                    st.write("Adaptando matriz taxonômica e aplicando estratégia temporal...")
 
                     payload = {
                         "inputs": {
@@ -506,82 +571,3 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                             status.update(label="Sem dados gerados", state="error")
                             st.warning("A variável resultado_perfis retornou vazia.")
                         else:
-                            buf_zip = io.BytesIO()
-                            with zipfile.ZipFile(buf_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                                total_cadernos = 0
-
-                                for idx, item_p in enumerate(res_perfis):
-                                    cfg_p = perfis_cfg[idx] if idx < len(perfis_cfg) else {}
-                                    pid = cfg_p.get("perfil_id")
-                                    if not pid and isinstance(item_p, dict):
-                                        pid = item_p.get("perfil_id")
-                                    if not pid:
-                                        pid = f"PERFIL_{idx+1}"
-
-                                    alunos = cfg_p.get("alunos", [])
-                                    if not alunos and isinstance(item_p, dict):
-                                        alunos = item_p.get("alunos", [])
-                                    if not alunos:
-                                        alunos = [f"Estudante_{pid}"]
-
-                                    pares = extrair_pares_resiliente(item_p)
-                                    subs_perfil = 0
-
-                                    for aluno in alunos:
-                                        pasta = sanitizar_nome(f"{aluno}_{pid}")
-                                        total_cadernos += 1
-
-                                        docx_ad, n_subs, r_logs = aplicar_docx_integral(bytes_docx, pares, aluno=aluno)
-                                        subs_perfil = n_subs
-                                        zf.writestr(f"{pasta}/Caderno_Prova_{sanitizar_nome(aluno)}.docx", docx_ad.getvalue())
-
-                                        docx_gab = gerar_rubrica(pid, pares, aluno=aluno)
-                                        zf.writestr(f"{pasta}/Gabarito_e_Rubrica_{sanitizar_nome(aluno)}.docx", docx_gab.getvalue())
-
-                                        docx_ins = gerar_protocolo(pid, aluno=aluno)
-                                        zf.writestr(f"{pasta}/Protocolo_Aplicacao_{sanitizar_nome(aluno)}.docx", docx_ins.getvalue())
-
-                                    st.session_state.resumo_geracao.append({"perfil": pid, "estudantes": alunos, "alteracoes": subs_perfil, "total_pares": len(pares)})
-                                    st.session_state.detalhes_log.append({"perfil": pid, "estudantes": alunos, "pares": pares})
-
-                            buf_zip.seek(0)
-                            st.session_state.pacote_zip = buf_zip.getvalue()
-                            status.update(label=f"Sucesso! {total_cadernos} cadernos nominais adaptados no pacote.", state="complete")
-
-            except Exception as e:
-                status.update(label="Erro no processamento", state="error")
-                st.error(f"Ocorreu um erro: {str(e)}")
-
-if st.session_state.pacote_zip:
-    st.divider()
-    st.subheader("📦 Pacote Pedagógico Pronto para Download")
-    st.markdown("O arquivo compactado organiza **uma pasta nominal para cada estudante** cadastrado:")
-    st.markdown("- **Caderno de Prova Totalmente Adaptado** (`.docx` com layout preservado e nome inserido)")
-    st.markdown("- **Gabarito & Matriz de Correção Nominal** (`.docx` com psicometria e critérios analíticos de Bloom)")
-    st.markdown("- **Protocolo Oficial de Aplicação Nominal** (`.docx` estruturado para docente e fiscal)")
-
-    st.download_button(
-        label="📥 Baixar Pacote Completo Individualizado (.zip)",
-        data=st.session_state.pacote_zip,
-        file_name="Avaliacoes_Adaptadas_Nominais_Pacote_Completo.zip",
-        mime="application/zip",
-        type="primary",
-        key="btn_zip_consolidado"
-    )
-
-    st.markdown("---")
-    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
-    for i, r in enumerate(st.session_state.resumo_geracao):
-        alunos_str = ", ".join(r['estudantes'])
-        cols_metrica[i].metric(
-            label=f"Perfil: {r['perfil']} ({len(r['estudantes'])} alunos)",
-            value=f"{r['alteracoes']} modificadas",
-            help=f"Estudantes atendidos: {alunos_str}"
-        )
-
-    with st.expander("🔍 Auditoria detalhada dos estudantes e substituições"):
-        for d in st.session_state.detalhes_log:
-            st.markdown(f"### Perfil: {d['perfil']}")
-            st.markdown(f"**Estudantes Gerados:** {', '.join(d['estudantes'])}")
-            st.markdown("**Pares aplicados nas questões:**")
-            st.json(d['pares'])
