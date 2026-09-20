@@ -18,7 +18,7 @@ st.set_page_config(page_title="Adaptador Acadêmico Inclusivo", page_icon="🎓"
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva, calculando automaticamente a melhor modelagem pedagógica: manutenção com 
+cognitiva, calculando a melhor modelagem pedagógica: manutenção com 
 tempo estendido ou sintetização algorítmica de construto mantendo a duração regular.
 """)
 
@@ -54,6 +54,8 @@ contexto_turma_padrao = """[
 ]"""
 
 contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=110)
+
+# ----------------- FUNÇÕES AUXILIARES -----------------
 
 def sanitizar_nome(s: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]', '_', str(s).strip())
@@ -208,11 +210,9 @@ def extrair_pares_resiliente(bloco):
     return pares
 
 def classificar_complexidade(par) -> int:
-    """Calcula um peso epistêmico de 1 a 5 baseado na Taxonomia de Bloom."""
     t = par.get("original", "").lower()
     raw = par.get("raw", {})
     b = str(raw.get("bloom") or raw.get("nivel_bloom") or "").lower()
-    
     if "criar" in b or "avaliar" in b or any(v in t for v in ["avalie", "julgue", "critique", "defenda"]):
         return 5
     if "analisar" in b or any(v in t for v in ["analise", "relacione", "compare", "diferencie"]):
@@ -224,43 +224,30 @@ def classificar_complexidade(par) -> int:
     return 1
 
 def executar_otimizacao_psicometrica(pares_todos: list):
-    """
-    Algoritmo de Amostragem Estratificada de Construto:
-    Seleciona os itens de maior representatividade de Bloom e diversidade temático-conceitual,
-    avaliando se a redução compromete ou não a fidedignidade da avaliação.
-    """
     total = len(pares_todos)
     if total <= 3:
-        # Provas com 3 itens ou menos já são concisas demais; cortar compromete o construto.
         return {
             "pode_reduzir": False,
             "itens_mantidos": pares_todos,
             "itens_suprimidos": [],
             "aviso_critico": (
-                "⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas "
-                f"{total} itens essenciais. Qualquer supressão acarretará perda irreversível de construto acadêmico. "
-                "O sistema manteve 100% dos itens e recomenda fortemente a concessão de TEMPO ESTENDIDO (+50%)."
+                f"⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas {total} itens. "
+                "Qualquer corte causaria perda substancial de construto acadêmico. "
+                "O sistema manteve todos os itens e recomenda TEMPO ESTENDIDO (+50%)."
             ),
-            "justificativa": "Densidade amostral mínima atingida; redução invalidaria a aferição dos objetivos de aprendizagem."
+            "justificativa": "Densidade amostral mínima; redução invalidaria a aferição dos objetivos de aprendizagem."
         }
 
-    # Meta de corte: sintetizar entre 30% e 40% dos itens para caber no tempo regular
     alvo_manter = max(3, int(round(total * 0.65)))
-    
-    # Ordena mantendo prioridade para os itens de maior nível taxonômico (Bloom 3, 4 e 5)
     pares_ranqueados = sorted(
         pares_todos, 
         key=lambda p: (classificar_complexidade(p), len(p["original"])), 
         reverse=True
     )
-    
     mantidos = pares_ranqueados[:alvo_manter]
     suprimidos = pares_ranqueados[alvo_manter:]
-    
-    # Reordena os mantidos pela ordem original de aparição na prova
     mantidos_ordenados = [p for p in pares_todos if p in mantidos]
 
-    # Verifica se houve perda substantiva de níveis de topo
     niveis_orig = set(classificar_complexidade(p) for p in pares_todos)
     niveis_mant = set(classificar_complexidade(p) for p in mantidos)
     perda_topo = (5 in niveis_orig and 5 not in niveis_mant) or (4 in niveis_orig and 4 not in niveis_mant)
@@ -268,15 +255,14 @@ def executar_otimizacao_psicometrica(pares_todos: list):
     aviso = None
     if perda_topo:
         aviso = (
-            "⚠️ ALERTA DE COBERTURA TAXONÔMICA: A supressão de itens eliminou dimensões cognitivas de análise/avaliação. "
-            "Recomenda-se formalmente utilizar o modo de TEMPO ADICIONAL para este perfil de estudante."
+            "⚠️ ALERTA DE COBERTURA TAXONÔMICA: A sintetização eliminou dimensões analíticas essenciais. "
+            "Recomenda-se formalmente adotar TEMPO ADICIONAL para este perfil."
         )
 
     justificativa = (
-        f"A matriz regular de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
-        "Foram suprimidos itens redundantes de menor índice de discriminação, preservando os níveis taxonômicos "
-        "de maior representatividade epistemológica. Essa intervenção previne a saturação da memória de trabalho "
-        "e o colapso atencional sem degradar o construto avaliativo."
+        f"A matriz de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
+        "Foram suprimidos itens redundantes de menor discriminação, preservando os níveis taxonômicos "
+        "superiores. Essa intervenção previne a saturação da memória de trabalho sem degradar o construto."
     )
 
     return {
@@ -297,7 +283,7 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
     if pares_suprimidos:
         for p_sup in pares_suprimidos:
             remover_item_do_documento(doc, p_sup["original"])
-        logs.append(f"Sintetização psicométrica aplicada: {len(pares_suprimidos)} itens suprimidos para ajuste de tempo.")
+        logs.append(f"Sintetização psicométrica: {len(pares_suprimidos)} itens suprimidos para ajuste de tempo.")
 
     for par in pares:
         orig, adapt = par["original"], par["adaptado"]
@@ -338,40 +324,4 @@ def set_fundo(cel, cor_hex):
     shd.set(qn('w:val'), 'clear')
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), cor_hex)
-    tcPr.append(shd)
-
-def meta_psico(par, pid: str) -> dict:
-    raw = par.get("raw", {})
-    t = par.get("original", "").lower()
-    b = raw.get("bloom") or raw.get("nivel_bloom") or raw.get("nivel_cognitivo")
-    if not b:
-        if any(v in t for v in ["avalie", "julgue", "critique"]):
-            b = "Avaliar (Nível 5)"
-        elif any(v in t for v in ["analise", "compare", "relacione"]):
-            b = "Analisar (Nível 4)"
-        elif any(v in t for v in ["aplique", "calcule", "resolva"]):
-            b = "Aplicar (Nível 3)"
-        elif any(v in t for v in ["explique", "caracterize", "descreva"]):
-            b = "Compreender (Nível 2)"
-        else:
-            b = "Lembrar / Identificar (Nível 1)"
-
-    barr = "Sobrecarga de memória operacional decorrente de enunciado denso."
-    aj = "Segmentação em comandos unitários com destaque visual nos verbos de ação."
-    crit = "Aceitar respostas sintéticas em tópicos, priorizando o rigor do conceito."
-    if "TEA" in str(pid).upper():
-        barr = "Ambiguidade na interpretação de comandos múltiplos e termos implícitos."
-        aj = "Linearização dos comandos, vocabulário direto e eliminação de duplos sentidos."
-        crit = "Valorizar respostas literais e diretas, sem exigir floreios discursivos."
-
-    return {
-        "bloom": b,
-        "barreira": raw.get("barreira_enfrentada") or barr,
-        "ajuste": raw.get("justificativa_acessibilidade") or aj,
-        "criterio": raw.get("criterio_especifico") or crit
-    }
-
-def gerar_rubrica(pid: str, pares: list, aluno: str = None, modo_reducao: bool = False, total_orig: int = 0, parecer_texto: str = "") -> io.BytesIO:
-    doc = Document()
-    for s in doc.sections:
-        s.top_margin = s.bottom_margin = s.left_margin = s.right
+    tcPr
