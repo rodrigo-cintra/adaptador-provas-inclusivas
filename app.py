@@ -13,13 +13,13 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-st.set_page_config(page_title="Adaptador Académico Inclusivo", page_icon="🎓", layout="centered")
+st.set_page_config(
+    page_title="Adaptador Académico Inclusivo",
+    page_icon="🎓",
+    layout="centered"
+)
 
-st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
-st.markdown("""
-Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva e gerará os cadernos nominais, rubricas analíticas e protocolos de aplicação num único pacote compactado.
-""")
+# ----------------- CONFIGURAÇÕES E CONSTANTES -----------------
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
 DIFY_WORKFLOW_URL = "https://api.dify.ai/v1/workflows/run"
@@ -34,30 +34,7 @@ if "detalhes_log" not in st.session_state:
 if "pareceres_psicometricos" not in st.session_state:
     st.session_state.pareceres_psicometricos = []
 
-arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
-
-estrategia_docente = st.radio(
-    "Selecione a Diretriz de Aplicação:",
-    options=[
-        "Tempo Adicional Regulamentar (Até +50% de duração com 100% dos itens adaptados)",
-        "Mesmo Tempo de Sala com Otimização Psicométrica (Sintetização de itens sem perda de construto)"
-    ],
-    help="No modo otimizado, o algoritmo avalia a matriz de Bloom e seleciona os itens nucleares para prevenir fadiga executiva grave."
-)
-
-modo_sintetizado = "Otimização Psicométrica" in estrategia_docente
-
-contexto_turma_padrao = """[
-  {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
-  {"perfil_id": "TEA_SUPORTE1", "alunos": ["Beatriz Mendes"]}
-]"""
-
-contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=110)
-
-# Botão posicionado de forma visível e direta na interface
-disparar = st.button("🚀 Gerar Pacote Pedagógico Completo", type="primary", use_container_width=True)
-
-# ----------------- FUNÇÕES AUXILIARES -----------------
+# ----------------- FUNÇÕES AUXILIARES DE FORMATAÇÃO E PROCESSAMENTO -----------------
 
 def sanitizar_nome(s: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]', '_', str(s).strip())
@@ -68,7 +45,9 @@ def limpar_str(s: str) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[\r\n\t]+', ' ', str(s))).strip()
 
 def texto_consolidado(p) -> str:
-    return "".join(run.text for run in p.runs) if p.runs else (p.text or "")
+    if p.runs:
+        return "".join(run.text for run in p.runs)
+    return p.text or ""
 
 def preencher_md(paragrafo, texto_formatado: str):
     paragrafo.text = ""
@@ -84,7 +63,8 @@ def fragmentar_comandos(texto: str) -> list:
     partes = re.split(r'(\b[a-dA-D]\)\s+)', texto)
     if len(partes) <= 1:
         return [texto]
-    resultado, prefixo = [], ""
+    resultado = []
+    prefixo = ""
     for pedaco in partes:
         if re.match(r'\b[a-dA-D]\)\s+', pedaco):
             prefixo = pedaco
@@ -99,7 +79,8 @@ def substituir_em_paragrafo(p, antigo: str, novo: str) -> bool:
     txt = texto_consolidado(p)
     if not txt.strip() or not antigo.strip():
         return False
-    a_limpo, p_limpo = limpar_str(antigo), limpar_str(txt)
+    a_limpo = limpar_str(antigo)
+    p_limpo = limpar_str(txt)
 
     if antigo in txt:
         preencher_md(p, txt.replace(antigo, novo))
@@ -200,7 +181,8 @@ def extrair_pares_resiliente(bloco):
         adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
         num = elem.get("numero_item") or elem.get("item") or len(pares) + 1
 
-        s_orig, s_adapt = str(orig).strip(), str(adapt).strip()
+        s_orig = str(orig).strip()
+        s_adapt = str(adapt).strip()
         sub_origs = fragmentar_comandos(s_orig)
         sub_adapts = fragmentar_comandos(s_adapt)
 
@@ -233,11 +215,11 @@ def executar_otimizacao_psicometrica(pares_todos: list):
             "itens_mantidos": pares_todos,
             "itens_suprimidos": [],
             "aviso_critico": (
-                f"⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas {total} itens. "
-                "Qualquer corte causaria perda substancial de construto académico. "
-                "O sistema manteve todos os itens e recomenda TEMPO ESTENDIDO (+50%)."
+                f"⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas {total} itens essenciais. "
+                "Qualquer supressão causaria perda substantiva de construto académico. "
+                "O sistema manteve 100% dos itens e recomenda fortemente a concessão de TEMPO ESTENDIDO (+50%)."
             ),
-            "justificativa": "Densidade amostral mínima; a redução invalidaria a aferição dos objetivos de aprendizagem."
+            "justificativa": "Densidade amostral mínima atingida; a redução invalidaria a aferição dos objetivos de aprendizagem."
         }
 
     alvo_manter = max(3, int(round(total * 0.65)))
@@ -257,14 +239,14 @@ def executar_otimizacao_psicometrica(pares_todos: list):
     aviso = None
     if perda_topo:
         aviso = (
-            "⚠️ ALERTA DE COBERTURA TAXONÓMICA: A sintetização eliminou dimensões analíticas essenciais. "
-            "Recomenda-se formalmente adotar TEMPO ADICIONAL para este perfil."
+            "⚠️ ALERTA DE COBERTURA TAXONÓMICA: A sintetização eliminou dimensões cognitivas essenciais de análise/avaliação. "
+            "Recomenda-se formalmente utilizar o modo de TEMPO ADICIONAL para este estudante."
         )
 
     justificativa = (
-        f"A matriz de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
-        "Foram suprimidos itens redundantes de menor discriminação, preservando os níveis taxonómicos "
-        "superiores. Essa intervenção previne a saturação da memória de trabalho sem degradar o construto."
+        f"A matriz regular de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
+        "Foram suprimidos itens redundantes de menor discriminação, preservando os níveis taxonómicos superiores. "
+        "Essa intervenção previne a fadiga cognitiva e o colapso atencional sem degradar o construto avaliativo."
     )
 
     return {
@@ -277,10 +259,12 @@ def executar_otimizacao_psicometrica(pares_todos: list):
 
 def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_suprimidos: list = None):
     doc = Document(io.BytesIO(bytes_docx))
-    total_subs, logs = 0, []
+    total_subs = 0
+    logs = []
+
     if aluno:
         injetar_nome(doc, aluno)
-        logs.append(f"Nome '{aluno}' inserido.")
+        logs.append(f"Nome '{aluno}' inserido no cabeçalho.")
 
     if pares_suprimidos:
         for p_sup in pares_suprimidos:
@@ -288,7 +272,8 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
         logs.append(f"Sintetização psicométrica: {len(pares_suprimidos)} itens suprimidos para ajuste de tempo.")
 
     for par in pares:
-        orig, adapt = par["original"], par["adaptado"]
+        orig = par["original"]
+        adapt = par["adaptado"]
         sub = False
         for p in doc.paragraphs:
             if substituir_em_paragrafo(p, orig, adapt):
@@ -303,4 +288,475 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
                         for p in cell.paragraphs:
                             if substituir_em_paragrafo(p, orig, adapt):
                                 sub = True
-                                total
+                                total_subs += 1
+                                logs.append(f"Substituído em tabela: {orig[:40]}...")
+                                break
+                        if sub:
+                            break
+                    if sub:
+                        break
+                if sub:
+                    break
+        if not sub:
+            logs.append(f"Não localizado: {orig[:40]}...")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf, total_subs, logs
+
+def set_fundo(cel, cor_hex):
+    tcPr = cel._element.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), cor_hex)
+    tcPr.append(shd)
+
+def meta_psico(par, pid: str) -> dict:
+    raw = par.get("raw", {})
+    t = par.get("original", "").lower()
+    b = raw.get("bloom") or raw.get("nivel_bloom") or raw.get("nivel_cognitivo")
+    if not b:
+        if any(v in t for v in ["avalie", "julgue", "critique"]):
+            b = "Avaliar (Nível 5)"
+        elif any(v in t for v in ["analise", "compare", "relacione"]):
+            b = "Analisar (Nível 4)"
+        elif any(v in t for v in ["aplique", "calcule", "resolva"]):
+            b = "Aplicar (Nível 3)"
+        elif any(v in t for v in ["explique", "caracterize", "descreva"]):
+            b = "Compreender (Nível 2)"
+        else:
+            b = "Lembrar / Identificar (Nível 1)"
+
+    barr = "Sobrecarga de memória operacional decorrente de enunciado denso."
+    aj = "Segmentação em comandos unitários com destaque visual nos verbos de ação."
+    crit = "Aceitar respostas sintéticas em tópicos, priorizando o rigor do conceito."
+    if "TEA" in str(pid).upper():
+        barr = "Ambiguidade na interpretação de comandos múltiplos e termos implícitos."
+        aj = "Linearização dos comandos, vocabulário direto e eliminação de duplos sentidos."
+        crit = "Valorizar respostas literais e diretas, sem exigir floreios discursivos."
+
+    return {
+        "bloom": b,
+        "barreira": raw.get("barreira_enfrentada") or barr,
+        "ajuste": raw.get("justificativa_acessibilidade") or aj,
+        "criterio": raw.get("criterio_especifico") or crit
+    }
+
+def gerar_rubrica(pid: str, pares: list, aluno: str = None, modo_reducao: bool = False, total_orig: int = 0, parecer_texto: str = "") -> io.BytesIO:
+    doc = Document()
+    for s in doc.sections:
+        s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
+
+    p1 = doc.add_paragraph()
+    r1 = p1.add_run("Gabarito Orientado & Matriz de Correção Analítica")
+    r1.font.name, r1.font.size, r1.font.bold = 'Calibri', Pt(18), True
+    r1.font.color.rgb = RGBColor(24, 43, 73)
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    sub = f"Estudante: {aluno} | Perfil: {pid}" if aluno else f"Perfil Funcional: {pid}"
+    p2 = doc.add_paragraph()
+    r2 = p2.add_run(sub)
+    r2.font.name, r2.font.size, r2.font.italic = 'Calibri', Pt(11), True
+    r2.font.color.rgb = RGBColor(80, 80, 80)
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_heading("1. Fundamentação Pedagógica & Parecer Psicométrico", level=1)
+    texto_fund = (
+        "Este documento estabelece a matriz de correção técnica para o caderno adaptado, assegurando o princípio "
+        "da equivalência cognitiva preconizado pelo Desenho Universal para a Aprendizagem (DUA)."
+    )
+    if modo_reducao and parecer_texto:
+        texto_fund += f"\n\n[PARECER DE OTIMIZAÇÃO DE CONSTRUTO]: {parecer_texto}"
+    doc.add_paragraph(texto_fund)
+
+    doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
+    for idx, par in enumerate(pares):
+        m = meta_psico(par, pid)
+        doc.add_heading(f"Item #{par.get('numero', idx+1)} — Análise Cognitiva", level=2)
+        tab = doc.add_table(rows=6, cols=2)
+        tab.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tab.autofit = False
+
+        dados = [
+            ("Nível Bloom:", m["bloom"]),
+            ("Original:", par["original"]),
+            ("Adaptado:", par["adaptado"]),
+            ("Barreira:", m["barreira"]),
+            ("Intervenção:", m["ajuste"]),
+            ("Critério Docente:", m["criterio"])
+        ]
+        for i, (rot, val) in enumerate(dados):
+            c0, c1 = tab.rows[i].cells[0], tab.rows[i].cells[1]
+            c0.width, c1.width = Inches(1.8), Inches(4.7)
+            r = c0.paragraphs[0].add_run(rot)
+            r.bold = True
+            set_fundo(c0, "F0F2F5")
+            c1.paragraphs[0].add_run(str(val))
+
+        tab_r = doc.add_table(rows=4, cols=3)
+        tab_r.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tab_r.autofit = False
+        headers = ["Nível", "Critérios Observáveis", "Ponderação"]
+        larguras = [Inches(1.8), Inches(3.6), Inches(1.1)]
+
+        for ci, h in enumerate(headers):
+            cel = tab_r.rows[0].cells[ci]
+            cel.width = larguras[ci]
+            r = cel.paragraphs[0].add_run(h)
+            r.bold = True
+            r.font.color.rgb = RGBColor(255, 255, 255)
+            set_fundo(cel, "1F3864")
+
+        niveis = [
+            ("Pleno", "Mobiliza com precisão os conceitos solicitados nos comandos segmentados.", "90% a 100%"),
+            ("Parcial", "Demonstra compreensão do núcleo central, com omissão pontual de elementos secundários.", "50% a 70%"),
+            ("Insuficiente", "Equívocos conceituais substantivos, fuga ao tema ou ausência de nexo.", "0% a 30%")
+        ]
+        for ri, (n, d, po) in enumerate(niveis, start=1):
+            row = tab_r.rows[ri]
+            for ci, v in enumerate([n, d, po]):
+                c = row.cells[ci]
+                c.width = larguras[ci]
+                run = c.paragraphs[0].add_run(v)
+                if ci == 0:
+                    run.bold = True
+                set_fundo(c, "FFFFFF" if ri % 2 != 0 else "F9FAFC")
+
+    doc.add_heading("3. Diretrizes para Feedback Formativo", level=1)
+    doc.add_paragraph("Pontuar conceitos atingidos e oportunizar esclarecimento oral breve em caso de concisão extrema.")
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+def gerar_protocolo(pid: str, aluno: str = None, modo_reducao: bool = False, total_itens_mantidos: int = 0, parecer_texto: str = "") -> io.BytesIO:
+    doc = Document()
+    for s in doc.sections:
+        s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
+
+    p1 = doc.add_paragraph()
+    r1 = p1.add_run("Protocolo Oficial de Aplicação & Mediação Avaliativa")
+    r1.font.name, r1.font.size, r1.font.bold = 'Calibri', Pt(18), True
+    r1.font.color.rgb = RGBColor(24, 43, 73)
+    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    sub = f"Estudante: {aluno} | Perfil: {pid}" if aluno else f"Diretrizes de Sala | Perfil: {pid}"
+    p2 = doc.add_paragraph()
+    r2 = p2.add_run(sub)
+    r2.font.name, r2.font.size, r2.font.italic = 'Calibri', Pt(11), True
+    r2.font.color.rgb = RGBColor(80, 80, 80)
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_heading("1. Ficha de Parametrização & Registro de Sala", level=1)
+    tab_f = doc.add_table(rows=5, cols=2)
+    tab_f.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_f.autofit = False
+
+    if modo_reducao:
+        tempo_desc = "Mesmo tempo de sala da turma regular (Sem acréscimo temporal - Prova Sintetizada)"
+        estrat_desc = f"Sintetização algorítmica de construto para {total_itens_mantidos} itens nucleares."
+    else:
+        tempo_desc = "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido de até +50%)"
+        estrat_desc = "Manutenção integral dos itens com concessão de tempo estendido."
+
+    dados_f = [
+        ("Estudante Beneficiário:", aluno if aluno else "Conforme lista homologada"),
+        ("Perfil Funcional Alvo:", f"{pid} (Equivalência Cognitiva DUA)"),
+        ("Estratégia Homologada:", estrat_desc),
+        ("Responsável / Fiscal:", "________________________________________________________"),
+        ("Duração / Horário Previsto:", tempo_desc)
+    ]
+    for i, (c, v) in enumerate(dados_f):
+        c0, c1 = tab_f.rows[i].cells[0], tab_f.rows[i].cells[1]
+        c0.width, c1.width = Inches(2.2), Inches(4.3)
+        c0.paragraphs[0].add_run(c).bold = True
+        set_fundo(c0, "F0F2F5")
+        c1.paragraphs[0].add_run(v)
+
+    doc.add_heading("2. Limiares de Mediação (Permitido vs. Vedado)", level=1)
+    tab_m = doc.add_table(rows=3, cols=2)
+    tab_m.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tab_m.autofit = False
+
+    h_med = ["Condutas Autorizadas", "Condutas Vedadas"]
+    for ci, h in enumerate(h_med):
+        cel = tab_m.rows[0].cells[ci]
+        cel.width = Inches(3.25)
+        r = cel.paragraphs[0].add_run(h)
+        r.bold = True
+        r.font.color.rgb = RGBColor(255, 255, 255)
+        set_fundo(cel, "2E75B6" if ci == 0 else "C00000")
+
+    regras = [
+        ("Reler comandos pausadamente como impressos.", "Parafrasear conceitos ou dar pistas teóricas."),
+        ("Esclarecer verbos de comando (ex: relacione).", "Validar respostas parciais durante a prova.")
+    ]
+    for ri, (perm, proib) in enumerate(regras, start=1):
+        c0, c1 = tab_m.rows[ri].cells[0], tab_m.rows[ri].cells[1]
+        c0.width, c1.width = Inches(3.25), Inches(3.25)
+        c0.paragraphs[0].add_run(perm)
+        set_fundo(c0, "F2F7FA")
+        c1.paragraphs[0].add_run(proib)
+        set_fundo(c1, "FDF2F2")
+
+    doc.add_heading("3. Termo de Conformidade", level=1)
+    doc.add_paragraph("Declaro que a avaliação foi administrada em conformidade com as diretrizes de equidade.")
+    p_ass = doc.add_paragraph("\n___________________________________________________\nAssinatura do Fiscal de Sala")
+    p_ass.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+# ----------------- FORMULÁRIO PRINCIPAL E BOTÃO -----------------
+
+st.markdown("---")
+
+arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
+
+estrategia_docente = st.radio(
+    "Selecione a Diretriz de Aplicação:",
+    options=[
+        "Tempo Adicional Regulamentar (Até +50% de duração com 100% dos itens adaptados)",
+        "Mesmo Tempo de Sala com Otimização Psicométrica (Sintetização de itens sem perda de construto)"
+    ],
+    help="No modo otimizado, o algoritmo avalia a matriz de Bloom e seleciona os itens nucleares para prevenir fadiga executiva grave."
+)
+
+modo_sintetizado = "Otimização Psicométrica" in estrategia_docente
+
+contexto_turma_padrao = """[
+  {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
+  {"perfil_id": "TEA_SUPORTE1", "alunos": ["Beatriz Mendes"]}
+]"""
+
+contexto_turma = st.text_area("Mapeamento de Perfis da Turma (JSON):", value=contexto_turma_padrao, height=110)
+
+st.markdown("<br>", unsafe_allow_html=True)
+disparar = st.button("🚀 Gerar Pacote Pedagógico Completo", type="primary", use_container_width=True)
+
+# ----------------- EXECUÇÃO AO CLICAR -----------------
+
+if disparar:
+    if not arquivo_upload:
+        st.warning("Por favor, selecione um arquivo .docx antes de prosseguir.")
+    else:
+        st.session_state.pacote_zip = None
+        st.session_state.resumo_geracao = []
+        st.session_state.detalhes_log = []
+        st.session_state.pareceres_psicometricos = []
+
+        with st.status("Processando pacote pedagógico no Dify...", expanded=True) as status:
+            try:
+                bytes_docx = arquivo_upload.read()
+                auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
+
+                perfis_cfg = []
+                try:
+                    cfg_json = json.loads(contexto_turma)
+                    if isinstance(cfg_json, list):
+                        perfis_cfg = cfg_json
+                except Exception:
+                    perfis_cfg = []
+
+                st.write("Enviando documento institucional...")
+                files = {'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
+                resp_up = requests.post(DIFY_UPLOAD_URL, headers=auth, files=files, data={'user': 'docente-web'}, timeout=60)
+
+                if resp_up.status_code not in [200, 201]:
+                    status.update(label="Erro no upload", state="error")
+                    st.error(f"Erro no upload: {resp_up.text}")
+                else:
+                    fid = resp_up.json().get("id")
+                    st.write("Analisando matriz taxonómica e calculando equivalência curricular...")
+
+                    payload = {
+                        "inputs": {
+                            "arquivo_prova": [{"type": "document", "transfer_method": "local_file", "upload_file_id": fid}],
+                            "contexto_turma": contexto_turma
+                        },
+                        "response_mode": "streaming",
+                        "user": "docente-web"
+                    }
+
+                    r_dify = requests.post(DIFY_WORKFLOW_URL, headers={**auth, "Content-Type": "application/json"}, json=payload, stream=True, timeout=600)
+
+                    outputs_finais, erro_fluxo = None, None
+                    for linha in r_dify.iter_lines():
+                        if not linha:
+                            continue
+                        l_str = linha.decode('utf-8')
+                        if not l_str.startswith("data:"):
+                            continue
+                        corpo = l_str[5:].strip()
+                        if not corpo:
+                            continue
+                        try:
+                            ev = json.loads(corpo)
+                            ev_tipo = ev.get("event")
+                            if ev_tipo == "workflow_finished":
+                                outputs_finais = ev.get("data", {}).get("outputs", {})
+                            elif ev_tipo == "workflow_failed":
+                                erro_fluxo = ev.get("data", {}).get("error") or ev.get("message")
+                            elif ev_tipo == "node_started":
+                                n = ev.get("data", {}).get("title", "")
+                                if n:
+                                    st.write(f"Etapa: {n}...")
+                            elif ev_tipo == "node_finished":
+                                nd = ev.get("data", {})
+                                if nd.get("status") == "failed":
+                                    erro_fluxo = f"Falha no nó {nd.get('title')}: {nd.get('error')}"
+                        except Exception:
+                            pass
+
+                    if erro_fluxo:
+                        status.update(label="Falha no processamento", state="error")
+                        st.error(f"Erro no Dify: {erro_fluxo}")
+                    elif not outputs_finais:
+                        status.update(label="Processamento sem saída", state="error")
+                        st.error("O fluxo concluiu sem gerar os dados de saída.")
+                    else:
+                        res_perfis = outputs_finais.get("resultado_perfis", [])
+                        if not res_perfis:
+                            status.update(label="Sem dados gerados", state="error")
+                            st.warning("A variável resultado_perfis retornou vazia.")
+                        else:
+                            buf_zip = io.BytesIO()
+                            with zipfile.ZipFile(buf_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                                total_cadernos = 0
+
+                                for idx, item_p in enumerate(res_perfis):
+                                    cfg_p = perfis_cfg[idx] if idx < len(perfis_cfg) else {}
+                                    pid = cfg_p.get("perfil_id")
+                                    if not pid and isinstance(item_p, dict):
+                                        pid = item_p.get("perfil_id")
+                                    if not pid:
+                                        pid = f"PERFIL_{idx+1}"
+
+                                    alunos = cfg_p.get("alunos", [])
+                                    if not alunos and isinstance(item_p, dict):
+                                        alunos = item_p.get("alunos", [])
+                                    if not alunos:
+                                        alunos = [f"Estudante_{pid}"]
+
+                                    pares_brutos = extrair_pares_resiliente(item_p)
+                                    total_orig = len(pares_brutos)
+
+                                    if modo_sintetizado:
+                                        resultado_otimizacao = executar_otimizacao_psicometrica(pares_brutos)
+                                        pares_mantidos = resultado_otimizacao["itens_mantidos"]
+                                        pares_suprimidos = resultado_otimizacao["itens_suprimidos"]
+                                        parecer_texto = resultado_otimizacao["justificativa"]
+                                        if resultado_otimizacao["aviso_critico"]:
+                                            st.session_state.pareceres_psicometricos.append(resultado_otimizacao["aviso_critico"])
+                                    else:
+                                        pares_mantidos = pares_brutos
+                                        pares_suprimidos = []
+                                        parecer_texto = "Manutenção integral de 100% dos itens da matriz curricular com concessão de tempo estendido regulamentar."
+
+                                    subs_perfil = 0
+
+                                    for aluno in alunos:
+                                        pasta = sanitizar_nome(f"{aluno}_{pid}")
+                                        total_cadernos += 1
+
+                                        docx_ad, n_subs, r_logs = aplicar_docx_customizado(
+                                            bytes_docx, 
+                                            pares_mantidos, 
+                                            aluno=aluno,
+                                            pares_suprimidos=pares_suprimidos
+                                        )
+                                        subs_perfil = n_subs
+                                        zf.writestr(f"{pasta}/Caderno_Prova_{sanitizar_nome(aluno)}.docx", docx_ad.getvalue())
+
+                                        docx_gab = gerar_rubrica(
+                                            pid, 
+                                            pares_mantidos, 
+                                            aluno=aluno, 
+                                            modo_reducao=modo_sintetizado, 
+                                            total_orig=total_orig,
+                                            parecer_texto=parecer_texto
+                                        )
+                                        zf.writestr(f"{pasta}/Gabarito_e_Rubrica_{sanitizar_nome(aluno)}.docx", docx_gab.getvalue())
+
+                                        docx_ins = gerar_protocolo(
+                                            pid, 
+                                            aluno=aluno, 
+                                            modo_reducao=modo_sintetizado, 
+                                            total_itens_mantidos=len(pares_mantidos),
+                                            parecer_texto=parecer_texto
+                                        )
+                                        zf.writestr(f"{pasta}/Protocolo_Aplicacao_{sanitizar_nome(aluno)}.docx", docx_ins.getvalue())
+
+                                    st.session_state.resumo_geracao.append({
+                                        "perfil": pid, 
+                                        "estudantes": alunos, 
+                                        "alteracoes": subs_perfil, 
+                                        "total_pares": len(pares_mantidos),
+                                        "suprimidos": len(pares_suprimidos),
+                                        "parecer": parecer_texto
+                                    })
+                                    st.session_state.detalhes_log.append({
+                                        "perfil": pid, 
+                                        "estudantes": alunos, 
+                                        "pares": pares_mantidos
+                                    })
+
+                            buf_zip.seek(0)
+                            st.session_state.pacote_zip = buf_zip.getvalue()
+                            status.update(label=f"Sucesso! {total_cadernos} cadernos nominais gerados com a estratégia selecionada.", state="complete")
+
+            except Exception as e:
+                status.update(label="Erro no processamento", state="error")
+                st.error(f"Ocorreu um erro: {str(e)}")
+
+# ----------------- PAINEL DE RESULTADOS PERSISTENTES -----------------
+
+if st.session_state.pareceres_psicometricos:
+    st.divider()
+    st.subheader("⚠️ Parecer Psicométrico do Sistema")
+    for aviso in set(st.session_state.pareceres_psicometricos):
+        st.warning(aviso)
+
+if st.session_state.pacote_zip:
+    st.divider()
+    st.subheader("📦 Pacote Pedagógico Pronto para Download")
+    st.markdown("O arquivo compactado organiza **uma pasta nominal para cada estudante** cadastrado:")
+    st.markdown("- **Caderno de Prova Adaptado** (`.docx` com layout preservado e modelagem algorítmica de construto)")
+    st.markdown("- **Gabarito & Matriz de Correção** (`.docx` com fundamentação DUA e parecer de equivalência de Bloom)")
+    st.markdown("- **Protocolo Oficial de Aplicação** (`.docx` com diretrizes homologadas para o fiscal de sala)")
+
+    st.download_button(
+        label="📥 Baixar Pacote Completo Individualizado (.zip)",
+        data=st.session_state.pacote_zip,
+        file_name="Avaliacoes_Adaptadas_Nominais_Pacote_Completo.zip",
+        mime="application/zip",
+        type="primary",
+        key="btn_zip_consolidado"
+    )
+
+    st.markdown("---")
+    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
+    for i, r in enumerate(st.session_state.resumo_geracao):
+        alunos_str = ", ".join(r['estudantes'])
+        msg_help = f"Estudantes atendidos: {alunos_str}"
+        if r.get("suprimidos", 0) > 0:
+            msg_help += f" | {r['suprimidos']} itens redundantes suprimidos para adaptação de ritmo."
+        cols_metrica[i].metric(
+            label=f"Perfil: {r['perfil']} ({len(r['estudantes'])} alunos)",
+            value=f"{r['total_pares']} itens na prova",
+            help=msg_help
+        )
+
+    with st.expander("🔍 Auditoria psicométrica e itens ativos na avaliação"):
+        for d in st.session_state.resumo_geracao:
+            st.markdown(f"### Perfil: {d['perfil']}")
+            st.markdown(f"**Estudantes Gerados:** {', '.join(d['estudantes'])}")
+            st.info(f"**Parecer Técnico Aplicado:** {d['parecer']}")
+        for d in st.session_state.detalhes_log:
+            st.markdown(f"**Itens Ativos no Perfil {d['perfil']}:**")
+            st.json(d['pares'])
