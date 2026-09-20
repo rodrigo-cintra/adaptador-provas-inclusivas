@@ -22,8 +22,8 @@ st.set_page_config(
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva e gerará os cadernos nominais, rubricas analíticas e protocolos 
-de aplicação individualizados por estudante em um pacote único compactado.
+cognitiva com invariância estilística, gerando cadernos nominais, matrizes 
+psicométricas de correção e protocolos de mediação em pacote único compactado.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -56,14 +56,22 @@ contexto_turma = st.text_area(
 def sanitizar_nome_arquivo(nome: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]', '_', str(nome).strip())
 
-def limpar_string(s: str) -> str:
+def limpar_string_invariante(s: str) -> str:
+    """Normaliza o texto eliminando variações de espaços, quebras e caracteres invisíveis."""
     if not s:
         return ""
     s = re.sub(r'[\r\n\t]+', ' ', str(s))
     s = re.sub(r'\s+', ' ', s)
     return s.strip()
 
+def obter_texto_consolidado(paragrafo) -> str:
+    """Extrai o texto total ignorando fragmentações de XML causadas por cores ou estilos."""
+    if paragrafo.runs:
+        return "".join(run.text for run in paragrafo.runs)
+    return paragrafo.text or ""
+
 def preencher_paragrafo_com_markdown(paragrafo, texto_formatado: str):
+    """Reconstrói o parágrafo aplicando negrito tipográfico real aos marcadores **texto**."""
     paragrafo.text = ""
     partes = re.split(r'(\*\*.*?\*\*)', texto_formatado)
     for parte in partes:
@@ -74,35 +82,36 @@ def preencher_paragrafo_com_markdown(paragrafo, texto_formatado: str):
             paragrafo.add_run(parte)
 
 def substituir_em_paragrafo(paragrafo, texto_antigo: str, texto_novo: str) -> bool:
-    texto_p = paragrafo.text
+    """Substitui o enunciado original mesmo quando fragmentado por cores ou estilos diferentes."""
+    texto_p = obter_texto_consolidado(paragrafo)
     if not texto_p.strip() or not texto_antigo.strip():
         return False
 
-    antigo_limpo = limpar_string(texto_antigo)
-    p_limpo = limpar_string(texto_p)
+    antigo_limpo = limpar_string_invariante(texto_antigo)
+    p_limpo = limpar_string_invariante(texto_p)
 
+    # 1. Correspondência exata na string consolidada
     if texto_antigo in texto_p:
-        preencher_paragrafo_com_markdown(
-            paragrafo, 
-            texto_p.replace(texto_antigo, texto_novo)
-        )
+        novo_texto_final = texto_p.replace(texto_antigo, texto_novo)
+        preencher_paragrafo_com_markdown(paragrafo, novo_texto_final)
         return True
 
+    # 2. Correspondência normalizada (ignora variações de espaçamento e quebra de run)
     if antigo_limpo in p_limpo or p_limpo in antigo_limpo:
         if len(antigo_limpo) >= 15:
             preencher_paragrafo_com_markdown(paragrafo, texto_novo)
             return True
 
+    # 3. Correspondência por similaridade difusa resistente a pontuações pontuais
     if len(antigo_limpo) > 20 and len(p_limpo) > 20:
         razao = difflib.SequenceMatcher(None, antigo_limpo, p_limpo).ratio()
-        if razao >= 0.70:
+        if razao >= 0.68:
             preencher_paragrafo_com_markdown(paragrafo, texto_novo)
             return True
 
     return False
 
 def injetar_nome_no_cabecalho(doc: Document, nome_estudante: str) -> bool:
-    """Substitui campos de identificação (Nome, Aluno, Discente) ou insere banner nominal."""
     padroes_busca = [
         r'(Nome\s*(?:do\s*Aluno\(a\)|do\s*Estudante|do\s*Aluno|Completo)?\s*:\s*)(_{2,}|\.{2,}|\s*)',
         r'(Aluno\(a\)\s*:\s*)(_{2,}|\.{2,}|\s*)',
@@ -111,10 +120,9 @@ def injetar_nome_no_cabecalho(doc: Document, nome_estudante: str) -> bool:
     ]
 
     def tentar_substituicao(p):
-        txt = p.text
+        txt = obter_texto_consolidado(p)
         for padrao in padroes_busca:
             if re.search(padrao, txt, re.IGNORECASE):
-                # Substitui a linha preservando o rótulo e inserindo o nome em destaque
                 def repl(m):
                     rotulo = m.group(1).strip()
                     return f"{rotulo} {nome_estudante}"
@@ -126,7 +134,6 @@ def injetar_nome_no_cabecalho(doc: Document, nome_estudante: str) -> bool:
                 return True
         return False
 
-    # 1. Varre parágrafos das tabelas (comum em cabeçalhos institucionais)
     for tabela in doc.tables:
         for row in tabela.rows:
             for cell in row.cells:
@@ -134,18 +141,15 @@ def injetar_nome_no_cabecalho(doc: Document, nome_estudante: str) -> bool:
                     if tentar_substituicao(p):
                         return True
 
-    # 2. Varre os primeiros 20 parágrafos do corpo do documento
     for p in doc.paragraphs[:20]:
         if tentar_substituicao(p):
             return True
 
-    # 3. Varre headers oficiais de seção
     for s in doc.sections:
         for p in s.header.paragraphs:
             if tentar_substituicao(p):
                 return True
 
-    # 4. Se não houver campo explícito, adiciona um banner elegante no início da página
     if doc.paragraphs:
         p_banner = doc.paragraphs[0].insert_paragraph_before()
     else:
@@ -237,6 +241,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list, nome_aluno: 
         adaptado = par["adaptado"]
         substituido = False
 
+        # Varredura em parágrafos do corpo
         for p in doc.paragraphs:
             if substituir_em_paragrafo(p, original, adaptado):
                 substituido = True
@@ -244,6 +249,7 @@ def aplicar_adaptacoes_docx(bytes_docx_original, lista_pares: list, nome_aluno: 
                 relatorio.append(f"Substituído: {original[:40]}...")
                 break
 
+        # Varredura em tabelas
         if not substituido:
             for tabela in doc.tables:
                 for linha in tabela.rows:
@@ -281,7 +287,7 @@ def inferir_metadados_psicometricos(item_par, perfil_id: str) -> dict:
     dados = item_par.get("dados_completos", {})
     texto = item_par.get("original", "").lower()
     
-    nivel_bloom = dados.get("bloom") or dados.get("nivel_cognitivo")
+    nivel_bloom = dados.get("bloom") or dados.get("nivel_bloom") or dados.get("nivel_cognitivo")
     if not nivel_bloom:
         if any(v in texto for v in ["avalie", "julgue", "critique", "defenda"]):
             nivel_bloom = "Avaliar (Nível 5)"
@@ -682,7 +688,6 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                 bytes_docx = arquivo_upload.read()
                 headers_auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
 
-                # Mapeamento prévio dos perfis configurados no JSON de entrada
                 lista_perfis_config = []
                 try:
                     turma_parsed = json.loads(contexto_turma)
@@ -712,7 +717,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     st.error(f"Erro no upload: {resp_upload.text}")
                 else:
                     file_id = resp_upload.json().get("id")
-                    st.write("Adaptando questões e gerando cadernos nominais por estudante...")
+                    st.write("Adaptando questões com invariância estilística...")
 
                     payload = {
                         "inputs": {
@@ -786,7 +791,6 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                                 total_cadernos_gerados = 0
 
                                 for idx, item_perfil in enumerate(resultado_perfis):
-                                    # Associação resiliente: tenta por índice posicional e por perfil_id
                                     perfil_config_atual = {}
                                     if idx < len(lista_perfis_config):
                                         perfil_config_atual = lista_perfis_config[idx]
@@ -797,7 +801,6 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                                     if not p_id:
                                         p_id = f"PERFIL_{idx + 1}"
 
-                                    # Obtém os alunos configurados
                                     alunos_perfil = perfil_config_atual.get("alunos", [])
                                     if not alunos_perfil and isinstance(item_perfil, dict):
                                         alunos_perfil = item_perfil.get("alunos", [])
@@ -807,12 +810,10 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                                     pares_adaptacao = extrair_dados_perfil(item_perfil)
                                     total_subs_perfil = 0
 
-                                    # Cria uma pasta e um kit completo por estudante cadastrado
                                     for aluno in alunos_perfil:
                                         pasta_estudante = sanitizar_nome_arquivo(f"{aluno}_{p_id}")
                                         total_cadernos_gerados += 1
 
-                                        # 1. Caderno de Prova Adaptada Nominal (.docx)
                                         docx_adaptado, total_subs, relatorio = aplicar_adaptacoes_docx(
                                             bytes_docx, 
                                             pares_adaptacao, 
@@ -820,79 +821,4 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                                         )
                                         total_subs_perfil = total_subs
                                         nome_prova = f"{pasta_estudante}/Caderno_Prova_{sanitizar_nome_arquivo(aluno)}.docx"
-                                        zip_file.writestr(nome_prova, docx_adaptado.getvalue())
-
-                                        # 2. Gabarito & Matriz Analítica Nominal (.docx)
-                                        docx_gabarito = gerar_rubrica_analitica_sofisticada(
-                                            p_id, 
-                                            pares_adaptacao, 
-                                            nome_aluno=aluno
-                                        )
-                                        nome_gabarito = f"{pasta_estudante}/Gabarito_e_Rubrica_{sanitizar_nome_arquivo(aluno)}.docx"
-                                        zip_file.writestr(nome_gabarito, docx_gabarito.getvalue())
-
-                                        # 3. Protocolo de Aplicação Nominal (.docx)
-                                        docx_instrucoes = gerar_protocolo_aplicacao_avancado(
-                                            p_id, 
-                                            pares_adaptacao, 
-                                            nome_aluno=aluno
-                                        )
-                                        nome_instrucoes = f"{pasta_estudante}/Protocolo_Aplicacao_{sanitizar_nome_arquivo(aluno)}.docx"
-                                        zip_file.writestr(nome_instrucoes, docx_instrucoes.getvalue())
-
-                                    st.session_state.resumo_geracao.append({
-                                        "perfil": p_id,
-                                        "estudantes": alunos_perfil,
-                                        "alteracoes": total_subs_perfil,
-                                        "total_pares": len(pares_adaptacao)
-                                    })
-                                    st.session_state.detalhes_log.append({
-                                        "perfil": p_id,
-                                        "estudantes": alunos_perfil,
-                                        "pares": pares_adaptacao
-                                    })
-
-                            buffer_zip.seek(0)
-                            st.session_state.pacote_zip = buffer_zip.getvalue()
-                            status.update(
-                                label=f"Sucesso! {total_cadernos_gerados} cadernos nominais gerados no pacote.", 
-                                state="complete"
-                            )
-
-            except Exception as e:
-                status.update(label="Erro no processamento", state="error")
-                st.error(f"Ocorreu um erro: {str(e)}")
-
-if st.session_state.pacote_zip:
-    st.divider()
-    st.subheader("📦 Pacote Pedagógico Pronto para Download")
-    st.markdown("O arquivo compactado organiza **uma pasta nominal para cada estudante** cadastrado:")
-    st.markdown("- **Caderno de Prova Adaptado e Nominal** (`.docx` com nome do estudante inserido no cabeçalho)")
-    st.markdown("- **Gabarito & Matriz de Correção Nominal** (`.docx` com psicometria e rubrica por aluno)")
-    st.markdown("- **Protocolo Oficial de Aplicação Nominal** (`.docx` com ficha de sala e registro de acomodações)")
-
-    st.download_button(
-        label="📥 Baixar Pacote Completo Individualizado (.zip)",
-        data=st.session_state.pacote_zip,
-        file_name="Avaliacoes_Adaptadas_Nominais_Pacote_Completo.zip",
-        mime="application/zip",
-        type="primary",
-        key="btn_zip_consolidado"
-    )
-
-    st.markdown("---")
-    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
-    for i, r in enumerate(st.session_state.resumo_geracao):
-        alunos_str = ", ".join(r['estudantes'])
-        cols_metrica[i].metric(
-            label=f"Perfil: {r['perfil']} ({len(r['estudantes'])} alunos)",
-            value=f"{r['alteracoes']} modificadas",
-            help=f"Estudantes atendidos: {alunos_str}"
-        )
-
-    with st.expander("🔍 Auditoria detalhada dos estudantes e substituições"):
-        for d in st.session_state.detalhes_log:
-            st.markdown(f"### Perfil: {d['perfil']}")
-            st.markdown(f"**Estudantes Gerados:** {', '.join(d['estudantes'])}")
-            st.markdown("**Pares aplicados nas questões:**")
-            st.json(d['pares'])
+                                        zip_file.writestr(nome_prova,
