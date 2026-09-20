@@ -880,4 +880,63 @@ if disparar:
                                         "suprimidos": len(pares_suprimidos),
                                         "laudo": laudo_completo
                                     })
-                                    st.session_state.detalhes_log.append
+                                    st.session_state.detalhes_log.append({
+                                        "perfil": pid, 
+                                        "estudantes": alunos, 
+                                        "pares": pares_mantidos
+                                    })
+
+                            buf_zip.seek(0)
+                            st.session_state.pacote_zip = buf_zip.getvalue()
+                            status.update(label=f"Sucesso! {total_cadernos} cadernos nominais gerados com equivalência curricular integral.", state="complete")
+
+            except Exception as e:
+                status.update(label="Erro no processamento", state="error")
+                st.error(f"Ocorreu um erro: {str(e)}")
+
+# ----------------- PAINEL DE RESULTADOS PERSISTENTES -----------------
+
+if st.session_state.pareceres_psicometricos:
+    st.divider()
+    st.subheader("⚠️ Parecer Psicométrico do Sistema")
+    for aviso in set(st.session_state.pareceres_psicometricos):
+        st.warning(aviso)
+
+if st.session_state.pacote_zip:
+    st.divider()
+    st.subheader("📦 Pacote Pedagógico Pronto para Download")
+    st.markdown("O arquivo compactado organiza **uma pasta nominal para cada estudante** cadastrado:")
+    st.markdown("- **Caderno de Prova Adaptado** (`.docx` com 100% dos temas curriculares e nome do estudante inserido)")
+    st.markdown("- **Gabarito & Matriz de Correção** (`.docx` com tabela oficial de equivalência curricular e laudo pericial para prontuário)")
+    st.markdown("- **Protocolo Oficial de Aplicação** (`.docx` com diretrizes homologadas para o fiscal de sala)")
+
+    st.download_button(
+        label="📥 Baixar Pacote Completo Individualizado (.zip)",
+        data=st.session_state.pacote_zip,
+        file_name="Avaliacoes_Adaptadas_Nominais_Pacote_Completo.zip",
+        mime="application/zip",
+        type="primary",
+        key="btn_zip_consolidado"
+    )
+
+    st.markdown("---")
+    cols_metrica = st.columns(len(st.session_state.resumo_geracao))
+    for i, r in enumerate(st.session_state.resumo_geracao):
+        alunos_str = ", ".join(r['estudantes'])
+        msg_help = f"Estudantes atendidos: {alunos_str}"
+        if r.get("suprimidos", 0) > 0:
+            msg_help += f" | {r['suprimidos']} subitens secundários aglutinados (100% dos temas mantidos)."
+        cols_metrica[i].metric(
+            label=f"Perfil: {r['perfil']} ({len(r['estudantes'])} alunos)",
+            value=f"{r['total_pares']} itens nucleares",
+            help=msg_help
+        )
+
+    with st.expander("🔍 Auditoria Curricular & Laudo Pericial para Prontuário"):
+        for d in st.session_state.resumo_geracao:
+            st.markdown(f"### Perfil: {d['perfil']}")
+            st.markdown(f"**Estudantes Gerados:** {', '.join(d['estudantes'])}")
+            st.text_area(f"Laudo Técnico Pericial ({d['perfil']})", value=d["laudo"], height=380)
+        for d in st.session_state.detalhes_log:
+            st.markdown(f"**Itens Ativos no Perfil {d['perfil']}:**")
+            st.json(d['pares'])
