@@ -35,7 +35,6 @@ if "detalhes_log" not in st.session_state:
 
 arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
 
-# Seletor de Estratégia de Acomodação
 col_est1, col_est2 = st.columns(2)
 with col_est1:
     estrategia_tempo = st.selectbox(
@@ -166,7 +165,6 @@ def injetar_nome(doc: Document, aluno: str):
     r2.font.color.rgb = RGBColor(24, 43, 73)
 
 def remover_item_do_documento(doc: Document, texto_alvo: str):
-    """Remove parágrafos ou trechos de itens suprimidos no modo de prova reduzida."""
     alvo_limpo = limpar_str(texto_alvo)
     if not alvo_limpo or len(alvo_limpo) < 10:
         return
@@ -231,13 +229,11 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
         injetar_nome(doc, aluno)
         logs.append(f"Nome '{aluno}' inserido.")
 
-    # 1. Se houver redução, suprime fisicamente os itens não selecionados
     if pares_suprimidos:
         for p_sup in pares_suprimidos:
             remover_item_do_documento(doc, p_sup["original"])
         logs.append(f"Redução quantitativa aplicada: {len(pares_suprimidos)} itens suprimidos para ajuste atencional.")
 
-    # 2. Aplica as adaptações nos itens mantidos
     for par in pares:
         orig, adapt = par["original"], par["adaptado"]
         sub = False
@@ -427,16 +423,12 @@ def gerar_protocolo(pid: str, aluno: str = None, modo_reducao: bool = False, tot
     tab_f.alignment = WD_TABLE_ALIGNMENT.CENTER
     tab_f.autofit = False
 
-    tempo_desc = (
-        "Mesmo tempo de sala da turma regular (Sem acréscimo temporal devido à redução de itens)" 
-        if modo_reducao else 
-        "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido de até +50%)"
-    )
-    estrat_desc = (
-        f"Redução quantitativa para {total_itens_mantidos} questões com equivalência cognitiva integral."
-        if modo_reducao else
-        "Manutenção integral dos itens com concessão de tempo estendido."
-    )
+    if modo_reducao:
+        tempo_desc = "Mesmo tempo de sala da turma regular (Sem acréscimo temporal devido à redução de itens)"
+        estrat_desc = f"Redução quantitativa para {total_itens_mantidos} questões com equivalência cognitiva integral."
+    else:
+        tempo_desc = "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido de até +50%)"
+        estrat_desc = "Manutenção integral dos itens com concessão de tempo estendido."
 
     dados_f = [
         ("Estudante Beneficiário:", aluno if aluno else "Conforme lista homologada"),
@@ -463,111 +455,4 @@ def gerar_protocolo(pid: str, aluno: str = None, modo_reducao: bool = False, tot
         cel.width = Inches(3.25)
         r = cel.paragraphs[0].add_run(h)
         r.bold = True
-        r.font.color.rgb = RGBColor(255, 255, 255)
-        set_fundo(cel, "2E75B6" if ci == 0 else "C00000")
-
-    regras = [
-        ("Reler comandos pausadamente como impressos.", "Parafrasear conceitos ou dar pistas teóricas."),
-        ("Esclarecer verbos de comando (ex: relacione).", "Validar respostas parciais durante a prova.")
-    ]
-    for ri, (perm, proib) in enumerate(regras, start=1):
-        c0, c1 = tab_m.rows[ri].cells[0], tab_m.rows[ri].cells[1]
-        c0.width, c1.width = Inches(3.25), Inches(3.25)
-        c0.paragraphs[0].add_run(perm)
-        set_fundo(c0, "F2F7FA")
-        c1.paragraphs[0].add_run(proib)
-        set_fundo(c1, "FDF2F2")
-
-    doc.add_heading("3. Termo de Conformidade", level=1)
-    doc.add_paragraph("Declaro que a avaliação foi administrada em conformidade com as diretrizes de equidade.")
-    p_ass = doc.add_paragraph("\n___________________________________________________\nAssinatura do Fiscal de Sala")
-    p_ass.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
-if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
-    if not arquivo_upload:
-        st.warning("Por favor, selecione um arquivo .docx antes de prosseguir.")
-    else:
-        st.session_state.pacote_zip = None
-        st.session_state.resumo_geracao = []
-        st.session_state.detalhes_log = []
-
-        with st.status("Processando pacote pedagógico no Dify...", expanded=True) as status:
-            try:
-                bytes_docx = arquivo_upload.read()
-                auth = {"Authorization": f"Bearer {DIFY_API_KEY}"}
-
-                perfis_cfg = []
-                try:
-                    cfg_json = json.loads(contexto_turma)
-                    if isinstance(cfg_json, list):
-                        perfis_cfg = cfg_json
-                except Exception:
-                    perfis_cfg = []
-
-                st.write("Enviando documento institucional...")
-                files = {'file': (arquivo_upload.name, io.BytesIO(bytes_docx), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')}
-                resp_up = requests.post(DIFY_UPLOAD_URL, headers=auth, files=files, data={'user': 'docente-web'}, timeout=60)
-
-                if resp_up.status_code not in [200, 201]:
-                    status.update(label="Erro no upload", state="error")
-                    st.error(f"Erro no upload: {resp_up.text}")
-                else:
-                    fid = resp_up.json().get("id")
-                    st.write("Adaptando matriz taxonômica e aplicando estratégia temporal...")
-
-                    payload = {
-                        "inputs": {
-                            "arquivo_prova": [{"type": "document", "transfer_method": "local_file", "upload_file_id": fid}],
-                            "contexto_turma": contexto_turma
-                        },
-                        "response_mode": "streaming",
-                        "user": "docente-web"
-                    }
-
-                    r_dify = requests.post(DIFY_WORKFLOW_URL, headers={**auth, "Content-Type": "application/json"}, json=payload, stream=True, timeout=600)
-
-                    outputs_finais, erro_fluxo = None, None
-                    for linha in r_dify.iter_lines():
-                        if not linha:
-                            continue
-                        l_str = linha.decode('utf-8')
-                        if not l_str.startswith("data:"):
-                            continue
-                        corpo = l_str[5:].strip()
-                        if not corpo:
-                            continue
-                        try:
-                            ev = json.loads(corpo)
-                            ev_tipo = ev.get("event")
-                            if ev_tipo == "workflow_finished":
-                                outputs_finais = ev.get("data", {}).get("outputs", {})
-                            elif ev_tipo == "workflow_failed":
-                                erro_fluxo = ev.get("data", {}).get("error") or ev.get("message")
-                            elif ev_tipo == "node_started":
-                                n = ev.get("data", {}).get("title", "")
-                                if n:
-                                    st.write(f"Etapa: {n}...")
-                            elif ev_tipo == "node_finished":
-                                nd = ev.get("data", {})
-                                if nd.get("status") == "failed":
-                                    erro_fluxo = f"Falha no nó {nd.get('title')}: {nd.get('error')}"
-                        except Exception:
-                            pass
-
-                    if erro_fluxo:
-                        status.update(label="Falha no processamento", state="error")
-                        st.error(f"Erro no Dify: {erro_fluxo}")
-                    elif not outputs_finais:
-                        status.update(label="Processamento sem saída", state="error")
-                        st.error("O fluxo concluiu sem gerar os dados de saída.")
-                    else:
-                        res_perfis = outputs_finais.get("resultado_perfis", [])
-                        if not res_perfis:
-                            status.update(label="Sem dados gerados", state="error")
-                            st.warning("A variável resultado_perfis retornou vazia.")
-                        else:
+        r.font
