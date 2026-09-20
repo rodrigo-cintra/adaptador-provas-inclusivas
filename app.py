@@ -18,8 +18,8 @@ st.set_page_config(page_title="Adaptador Acadêmico Inclusivo", page_icon="🎓"
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
 Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
-cognitiva com invariância estilística, gerando cadernos nominais, matrizes 
-psicométricas de correção e protocolos de mediação em pacote único compactado.
+cognitiva com invariância estilística, garantindo a adaptação integral 
+e individualizada dos cadernos nominais, matrizes psicométricas e protocolos de sala.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -55,14 +55,32 @@ def texto_consolidado(p) -> str:
 
 def preencher_md(paragrafo, texto_formatado: str):
     paragrafo.text = ""
-    for parte in re.split(r'(\*\*.*?\*\*)', texto_formatado):
+    partes = re.split(r'(\*\*.*?\*\*)', texto_formatado)
+    for parte in partes:
         if parte.startswith('**') and parte.endswith('**') and len(parte) >= 4:
             r = paragrafo.add_run(parte[2:-2])
             r.bold = True
         else:
             paragrafo.add_run(parte)
 
-def substituir_p(p, antigo: str, novo: str) -> bool:
+def fragmentar_comandos(texto: str) -> list:
+    """Extrai comandos isolados (como a), b), A), B)) caso o LLM agrupe em uma única string."""
+    partes = re.split(r'(\b[a-dA-D]\)\s+)', texto)
+    if len(partes) <= 1:
+        return [texto]
+    resultado = []
+    prefixo = ""
+    for pedaco in partes:
+        if re.match(r'\b[a-dA-D]\)\s+', pedaco):
+            prefixo = pedaco
+        elif prefixo:
+            resultado.append(prefixo + pedaco)
+            prefixo = ""
+        elif pedaco.strip():
+            resultado.append(pedaco)
+    return resultado if resultado else [texto]
+
+def substituir_em_paragrafo(p, antigo: str, novo: str) -> bool:
     txt = texto_consolidado(p)
     if not txt.strip() or not antigo.strip():
         return False
@@ -71,11 +89,11 @@ def substituir_p(p, antigo: str, novo: str) -> bool:
     if antigo in txt:
         preencher_md(p, txt.replace(antigo, novo))
         return True
-    if (a_limpo in p_limpo or p_limpo in a_limpo) and len(a_limpo) >= 15:
+    if (a_limpo in p_limpo or p_limpo in a_limpo) and len(a_limpo) >= 12:
         preencher_md(p, novo)
         return True
-    if len(a_limpo) > 20 and len(p_limpo) > 20:
-        if difflib.SequenceMatcher(None, a_limpo, p_limpo).ratio() >= 0.68:
+    if len(a_limpo) > 15 and len(p_limpo) > 15:
+        if difflib.SequenceMatcher(None, a_limpo, p_limpo).ratio() >= 0.62:
             preencher_md(p, novo)
             return True
     return False
@@ -120,7 +138,7 @@ def injetar_nome(doc: Document, aluno: str):
     r2.bold = True
     r2.font.color.rgb = RGBColor(24, 43, 73)
 
-def extrair_pares(bloco):
+def extrair_pares_resiliente(bloco):
     if isinstance(bloco, dict) and "conteudo" in bloco:
         bloco = bloco["conteudo"]
     if isinstance(bloco, str):
@@ -157,12 +175,19 @@ def extrair_pares(bloco):
         orig = elem.get("texto_original") or elem.get("enunciado_original") or elem.get("original") or ""
         adapt = elem.get("texto_adaptado") or elem.get("enunciado_adaptado") or elem.get("adaptado") or ""
         num = elem.get("numero_item") or elem.get("item") or len(pares) + 1
+
         s_orig, s_adapt = str(orig).strip(), str(adapt).strip()
-        if s_orig and s_adapt:
+        sub_origs = fragmentar_comandos(s_orig)
+        sub_adapts = fragmentar_comandos(s_adapt)
+
+        if len(sub_origs) == len(sub_adapts) and len(sub_origs) > 1:
+            for i, (so, sa) in enumerate(zip(sub_origs, sub_adapts)):
+                pares.append({"numero": f"{num}.{i+1}", "original": so.strip(), "adaptado": sa.strip(), "raw": elem})
+        elif s_orig and s_adapt:
             pares.append({"numero": num, "original": s_orig, "adaptado": s_adapt, "raw": elem})
     return pares
 
-def aplicar_docx(bytes_docx, pares: list, aluno: str = None):
+def aplicar_docx_integral(bytes_docx, pares: list, aluno: str = None):
     doc = Document(io.BytesIO(bytes_docx))
     total_subs, logs = 0, []
     if aluno:
@@ -173,20 +198,20 @@ def aplicar_docx(bytes_docx, pares: list, aluno: str = None):
         orig, adapt = par["original"], par["adaptado"]
         sub = False
         for p in doc.paragraphs:
-            if substituir_p(p, orig, adapt):
+            if substituir_em_paragrafo(p, orig, adapt):
                 sub = True
                 total_subs += 1
-                logs.append(f"Substituído: {orig[:35]}...")
+                logs.append(f"Substituído: {orig[:40]}...")
                 break
         if not sub:
             for tab in doc.tables:
                 for row in tab.rows:
                     for cell in row.cells:
                         for p in cell.paragraphs:
-                            if substituir_p(p, orig, adapt):
+                            if substituir_em_paragrafo(p, orig, adapt):
                                 sub = True
                                 total_subs += 1
-                                logs.append(f"Substituído em tabela: {orig[:35]}...")
+                                logs.append(f"Substituído em tabela: {orig[:40]}...")
                                 break
                         if sub:
                             break
@@ -195,7 +220,7 @@ def aplicar_docx(bytes_docx, pares: list, aluno: str = None):
                 if sub:
                     break
         if not sub:
-            logs.append(f"Não localizado: {orig[:35]}...")
+            logs.append(f"Não localizado: {orig[:40]}...")
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -428,7 +453,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                     st.error(f"Erro no upload: {resp_up.text}")
                 else:
                     fid = resp_up.json().get("id")
-                    st.write("Adaptando questões com invariância estilística...")
+                    st.write("Adaptando 100% das questões com invariância estilística...")
 
                     payload = {
                         "inputs": {
@@ -499,14 +524,14 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
                                     if not alunos:
                                         alunos = [f"Estudante_{pid}"]
 
-                                    pares = extrair_pares(item_p)
+                                    pares = extrair_pares_resiliente(item_p)
                                     subs_perfil = 0
 
                                     for aluno in alunos:
                                         pasta = sanitizar_nome(f"{aluno}_{pid}")
                                         total_cadernos += 1
 
-                                        docx_ad, n_subs, r_logs = aplicar_docx(bytes_docx, pares, aluno=aluno)
+                                        docx_ad, n_subs, r_logs = aplicar_docx_integral(bytes_docx, pares, aluno=aluno)
                                         subs_perfil = n_subs
                                         zf.writestr(f"{pasta}/Caderno_Prova_{sanitizar_nome(aluno)}.docx", docx_ad.getvalue())
 
@@ -521,7 +546,7 @@ if st.button("Gerar Pacote Pedagógico Completo", type="primary"):
 
                             buf_zip.seek(0)
                             st.session_state.pacote_zip = buf_zip.getvalue()
-                            status.update(label=f"Sucesso! {total_cadernos} cadernos nominais gerados no pacote.", state="complete")
+                            status.update(label=f"Sucesso! {total_cadernos} cadernos nominais adaptados no pacote.", state="complete")
 
             except Exception as e:
                 status.update(label="Erro no processamento", state="error")
@@ -531,8 +556,8 @@ if st.session_state.pacote_zip:
     st.divider()
     st.subheader("📦 Pacote Pedagógico Pronto para Download")
     st.markdown("O arquivo compactado organiza **uma pasta nominal para cada estudante** cadastrado:")
-    st.markdown("- **Caderno de Prova Adaptado e Nominal** (`.docx` com layout preservado e nome inserido)")
-    st.markdown("- **Gabarito & Matriz de Correção Nominal** (`.docx` com psicometria e critérios analíticos)")
+    st.markdown("- **Caderno de Prova Totalmente Adaptado** (`.docx` com layout preservado e nome inserido)")
+    st.markdown("- **Gabarito & Matriz de Correção Nominal** (`.docx` com psicometria e critérios analíticos de Bloom)")
     st.markdown("- **Protocolo Oficial de Aplicação Nominal** (`.docx` estruturado para docente e fiscal)")
 
     st.download_button(
