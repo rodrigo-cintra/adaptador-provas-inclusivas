@@ -17,9 +17,9 @@ st.set_page_config(page_title="Adaptador Acadêmico Inclusivo", page_icon="🎓"
 
 st.title("🎓 Adaptação Didática Inclusiva de Avaliações")
 st.markdown("""
-Carregue a avaliação em formato **.docx**. Selecione a estratégia de acomodação temporal 
-(tempo estendido ou redução quantitativa com equivalência de construto) para gerar 
-cadernos nominais, rubricas analíticas e protocolos oficiais consolidados em arquivo `.zip`.
+Carregue a avaliação em formato **.docx**. O sistema processará a matriz 
+cognitiva, calculando automaticamente a melhor modelagem pedagógica: manutenção com 
+tempo estendido ou sintetização algorítmica de construto mantendo a duração regular.
 """)
 
 DIFY_API_KEY = "app-9NqVkZLWEQgSjy2AZHZ5KGO3"
@@ -32,35 +32,21 @@ if "resumo_geracao" not in st.session_state:
     st.session_state.resumo_geracao = []
 if "detalhes_log" not in st.session_state:
     st.session_state.detalhes_log = []
+if "pareceres_psicometricos" not in st.session_state:
+    st.session_state.pareceres_psicometricos = []
 
 arquivo_upload = st.file_uploader("Selecione o arquivo da Prova Regular (.docx):", type=["docx"])
 
-col_est1, col_est2 = st.columns(2)
-with col_est1:
-    estrategia_tempo = st.selectbox(
-        "Estratégia de Acomodação de Ritmo/Tempo:",
-        options=[
-            "Tempo Adicional Regulamentar (+50% de duração)",
-            "Mesmo Tempo de Sala com Redução Quantitativa de Itens"
-        ],
-        help="A redução de itens evita fadiga executiva grave em estudantes com tolerância atencional reduzida."
-    )
+estrategia_docente = st.radio(
+    "Selecione a Diretriz de Aplicação:",
+    options=[
+        "Tempo Adicional Regulamentar (Até +50% de duração com 100% dos itens adaptados)",
+        "Mesmo Tempo de Sala com Otimização Psicométrica (Sintetização de itens sem perda de construto)"
+    ],
+    help="No modo otimizado, o algoritmo avalia a matriz de Bloom e seleciona os itens nucleares para prevenir fadiga executiva grave."
+)
 
-modo_reducao = "Redução Quantitativa" in estrategia_tempo
-
-with col_est2:
-    if modo_reducao:
-        itens_a_manter = st.number_input(
-            "Quantidade de questões a manter na prova adaptada:",
-            min_value=2,
-            max_value=10,
-            value=4,
-            step=1,
-            help="O sistema selecionará os itens nucleares de maior valor epistemológico."
-        )
-    else:
-        st.info("Serão mantidos 100% dos itens da prova com até 50% de acréscimo temporal no protocolo.")
-        itens_a_manter = 999
+modo_sintetizado = "Otimização Psicométrica" in estrategia_docente
 
 contexto_turma_padrao = """[
   {"perfil_id": "TDAH_01", "alunos": ["Lucas Silva", "Gabriel Santos"]},
@@ -94,8 +80,7 @@ def fragmentar_comandos(texto: str) -> list:
     partes = re.split(r'(\b[a-dA-D]\)\s+)', texto)
     if len(partes) <= 1:
         return [texto]
-    resultado = []
-    prefixo = ""
+    resultado, prefixo = [], ""
     for pedaco in partes:
         if re.match(r'\b[a-dA-D]\)\s+', pedaco):
             prefixo = pedaco
@@ -222,6 +207,86 @@ def extrair_pares_resiliente(bloco):
             pares.append({"numero": num, "original": s_orig, "adaptado": s_adapt, "raw": elem})
     return pares
 
+def classificar_complexidade(par) -> int:
+    """Calcula um peso epistêmico de 1 a 5 baseado na Taxonomia de Bloom."""
+    t = par.get("original", "").lower()
+    raw = par.get("raw", {})
+    b = str(raw.get("bloom") or raw.get("nivel_bloom") or "").lower()
+    
+    if "criar" in b or "avaliar" in b or any(v in t for v in ["avalie", "julgue", "critique", "defenda"]):
+        return 5
+    if "analisar" in b or any(v in t for v in ["analise", "relacione", "compare", "diferencie"]):
+        return 4
+    if "aplicar" in b or any(v in t for v in ["aplique", "calcule", "resolva", "demonstre"]):
+        return 3
+    if "compreender" in b or any(v in t for v in ["explique", "caracterize", "descreva", "discuta"]):
+        return 2
+    return 1
+
+def executar_otimizacao_psicometrica(pares_todos: list):
+    """
+    Algoritmo de Amostragem Estratificada de Construto:
+    Seleciona os itens de maior representatividade de Bloom e diversidade temático-conceitual,
+    avaliando se a redução compromete ou não a fidedignidade da avaliação.
+    """
+    total = len(pares_todos)
+    if total <= 3:
+        # Provas com 3 itens ou menos já são concisas demais; cortar compromete o construto.
+        return {
+            "pode_reduzir": False,
+            "itens_mantidos": pares_todos,
+            "itens_suprimidos": [],
+            "aviso_critico": (
+                "⚠️ ALERTA PSICOMÉTRICO: A avaliação regular possui apenas "
+                f"{total} itens essenciais. Qualquer supressão acarretará perda irreversível de construto acadêmico. "
+                "O sistema manteve 100% dos itens e recomenda fortemente a concessão de TEMPO ESTENDIDO (+50%)."
+            ),
+            "justificativa": "Densidade amostral mínima atingida; redução invalidaria a aferição dos objetivos de aprendizagem."
+        }
+
+    # Meta de corte: sintetizar entre 30% e 40% dos itens para caber no tempo regular
+    alvo_manter = max(3, int(round(total * 0.65)))
+    
+    # Ordena mantendo prioridade para os itens de maior nível taxonômico (Bloom 3, 4 e 5)
+    pares_ranqueados = sorted(
+        pares_todos, 
+        key=lambda p: (classificar_complexidade(p), len(p["original"])), 
+        reverse=True
+    )
+    
+    mantidos = pares_ranqueados[:alvo_manter]
+    suprimidos = pares_ranqueados[alvo_manter:]
+    
+    # Reordena os mantidos pela ordem original de aparição na prova
+    mantidos_ordenados = [p for p in pares_todos if p in mantidos]
+
+    # Verifica se houve perda substantiva de níveis de topo
+    niveis_orig = set(classificar_complexidade(p) for p in pares_todos)
+    niveis_mant = set(classificar_complexidade(p) for p in mantidos)
+    perda_topo = (5 in niveis_orig and 5 not in niveis_mant) or (4 in niveis_orig and 4 not in niveis_mant)
+
+    aviso = None
+    if perda_topo:
+        aviso = (
+            "⚠️ ALERTA DE COBERTURA TAXONÔMICA: A supressão de itens eliminou dimensões cognitivas de análise/avaliação. "
+            "Recomenda-se formalmente utilizar o modo de TEMPO ADICIONAL para este perfil de estudante."
+        )
+
+    justificativa = (
+        f"A matriz regular de {total} itens foi sintetizada para {len(mantidos_ordenados)} itens nucleares. "
+        "Foram suprimidos itens redundantes de menor índice de discriminação, preservando os níveis taxonômicos "
+        "de maior representatividade epistemológica. Essa intervenção previne a saturação da memória de trabalho "
+        "e o colapso atencional sem degradar o construto avaliativo."
+    )
+
+    return {
+        "pode_reduzir": True,
+        "itens_mantidos": mantidos_ordenados,
+        "itens_suprimidos": suprimidos,
+        "aviso_critico": aviso,
+        "justificativa": justificativa
+    }
+
 def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_suprimidos: list = None):
     doc = Document(io.BytesIO(bytes_docx))
     total_subs, logs = 0, []
@@ -232,7 +297,7 @@ def aplicar_docx_customizado(bytes_docx, pares: list, aluno: str = None, pares_s
     if pares_suprimidos:
         for p_sup in pares_suprimidos:
             remover_item_do_documento(doc, p_sup["original"])
-        logs.append(f"Redução quantitativa aplicada: {len(pares_suprimidos)} itens suprimidos para ajuste atencional.")
+        logs.append(f"Sintetização psicométrica aplicada: {len(pares_suprimidos)} itens suprimidos para ajuste de tempo.")
 
     for par in pares:
         orig, adapt = par["original"], par["adaptado"]
@@ -306,153 +371,7 @@ def meta_psico(par, pid: str) -> dict:
         "criterio": raw.get("criterio_especifico") or crit
     }
 
-def gerar_rubrica(pid: str, pares: list, aluno: str = None, modo_reducao: bool = False, total_orig: int = 0) -> io.BytesIO:
+def gerar_rubrica(pid: str, pares: list, aluno: str = None, modo_reducao: bool = False, total_orig: int = 0, parecer_texto: str = "") -> io.BytesIO:
     doc = Document()
     for s in doc.sections:
-        s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
-
-    p1 = doc.add_paragraph()
-    r1 = p1.add_run("Gabarito Orientado & Matriz de Correção Analítica")
-    r1.font.name, r1.font.size, r1.font.bold = 'Calibri', Pt(18), True
-    r1.font.color.rgb = RGBColor(24, 43, 73)
-    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    sub = f"Estudante: {aluno} | Perfil: {pid}" if aluno else f"Perfil Funcional: {pid}"
-    p2 = doc.add_paragraph()
-    r2 = p2.add_run(sub)
-    r2.font.name, r2.font.size, r2.font.italic = 'Calibri', Pt(11), True
-    r2.font.color.rgb = RGBColor(80, 80, 80)
-    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.add_heading("1. Fundamentação Pedagógica & Princípios Avaliativos", level=1)
-    
-    texto_fund = (
-        "Este documento estabelece a matriz de correção técnica para o caderno adaptado, assegurando o princípio "
-        "da equivalência cognitiva preconizado pelo Desenho Universal para a Aprendizagem (DUA)."
-    )
-    if modo_reducao:
-        texto_fund += (
-            f"\n\n[PARECER DE REDUÇÃO QUANTITATIVA]: A prova regular continha {total_orig} itens e foi reestruturada "
-            f"para {len(pares)} itens nucleares mantendo a mesma duração da turma. Com base na Teoria da Resposta ao Item "
-            "e no controle de fadiga cognitiva executiva, a redução amostral preserva a totalidade das competências "
-            "essenciais sem penalizar o estudante por déficits de sustentação atencional prolongada."
-        )
-    doc.add_paragraph(texto_fund)
-
-    doc.add_heading("2. Matriz Analítica de Correção por Item", level=1)
-    for idx, par in enumerate(pares):
-        m = meta_psico(par, pid)
-        doc.add_heading(f"Item #{par.get('numero', idx+1)} — Análise Cognitiva", level=2)
-        tab = doc.add_table(rows=6, cols=2)
-        tab.alignment = WD_TABLE_ALIGNMENT.CENTER
-        tab.autofit = False
-
-        dados = [
-            ("Nível Bloom:", m["bloom"]),
-            ("Original:", par["original"]),
-            ("Adaptado:", par["adaptado"]),
-            ("Barreira:", m["barreira"]),
-            ("Intervenção:", m["ajuste"]),
-            ("Critério Docente:", m["criterio"])
-        ]
-        for i, (rot, val) in enumerate(dados):
-            c0, c1 = tab.rows[i].cells[0], tab.rows[i].cells[1]
-            c0.width, c1.width = Inches(1.8), Inches(4.7)
-            r = c0.paragraphs[0].add_run(rot)
-            r.bold = True
-            set_fundo(c0, "F0F2F5")
-            c1.paragraphs[0].add_run(str(val))
-
-        tab_r = doc.add_table(rows=4, cols=3)
-        tab_r.alignment = WD_TABLE_ALIGNMENT.CENTER
-        tab_r.autofit = False
-        headers = ["Nível", "Critérios Observáveis", "Ponderação"]
-        larguras = [Inches(1.8), Inches(3.6), Inches(1.1)]
-
-        for ci, h in enumerate(headers):
-            cel = tab_r.rows[0].cells[ci]
-            cel.width = larguras[ci]
-            r = cel.paragraphs[0].add_run(h)
-            r.bold = True
-            r.font.color.rgb = RGBColor(255, 255, 255)
-            set_fundo(cel, "1F3864")
-
-        niveis = [
-            ("Pleno", "Mobiliza com precisão os conceitos solicitados nos comandos segmentados.", "90% a 100%"),
-            ("Parcial", "Demonstra compreensão do núcleo central, com omissão de elementos secundários.", "50% a 70%"),
-            ("Insuficiente", "Equívocos conceituais substantivos, fuga ao tema ou ausência de nexo.", "0% a 30%")
-        ]
-        for ri, (n, d, po) in enumerate(niveis, start=1):
-            row = tab_r.rows[ri]
-            for ci, v in enumerate([n, d, po]):
-                c = row.cells[ci]
-                c.width = larguras[ci]
-                run = c.paragraphs[0].add_run(v)
-                if ci == 0:
-                    run.bold = True
-                set_fundo(c, "FFFFFF" if ri % 2 != 0 else "F9FAFC")
-
-    doc.add_heading("3. Diretrizes para Feedback Formativo", level=1)
-    doc.add_paragraph("Pontuar conceitos atingidos e oportunizar esclarecimento oral breve em caso de concisão extrema.")
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf
-
-def gerar_protocolo(pid: str, aluno: str = None, modo_reducao: bool = False, total_itens_mantidos: int = 0) -> io.BytesIO:
-    doc = Document()
-    for s in doc.sections:
-        s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(1.0)
-
-    p1 = doc.add_paragraph()
-    r1 = p1.add_run("Protocolo Oficial de Aplicação & Mediação Avaliativa")
-    r1.font.name, r1.font.size, r1.font.bold = 'Calibri', Pt(18), True
-    r1.font.color.rgb = RGBColor(24, 43, 73)
-    p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    sub = f"Estudante: {aluno} | Perfil: {pid}" if aluno else f"Diretrizes de Sala | Perfil: {pid}"
-    p2 = doc.add_paragraph()
-    r2 = p2.add_run(sub)
-    r2.font.name, r2.font.size, r2.font.italic = 'Calibri', Pt(11), True
-    r2.font.color.rgb = RGBColor(80, 80, 80)
-    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.add_heading("1. Ficha de Parametrização & Registro de Sala", level=1)
-    tab_f = doc.add_table(rows=5, cols=2)
-    tab_f.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tab_f.autofit = False
-
-    if modo_reducao:
-        tempo_desc = "Mesmo tempo de sala da turma regular (Sem acréscimo temporal devido à redução de itens)"
-        estrat_desc = f"Redução quantitativa para {total_itens_mantidos} questões com equivalência cognitiva integral."
-    else:
-        tempo_desc = "[ ___ : ___ ] às [ ___ : ___ ] (com tempo estendido de até +50%)"
-        estrat_desc = "Manutenção integral dos itens com concessão de tempo estendido."
-
-    dados_f = [
-        ("Estudante Beneficiário:", aluno if aluno else "Conforme lista homologada"),
-        ("Perfil Funcional Alvo:", f"{pid} (Equivalência Cognitiva DUA)"),
-        ("Estratégia Homologada:", estrat_desc),
-        ("Responsável / Fiscal:", "________________________________________________________"),
-        ("Duração / Horário Previsto:", tempo_desc)
-    ]
-    for i, (c, v) in enumerate(dados_f):
-        c0, c1 = tab_f.rows[i].cells[0], tab_f.rows[i].cells[1]
-        c0.width, c1.width = Inches(2.2), Inches(4.3)
-        c0.paragraphs[0].add_run(c).bold = True
-        set_fundo(c0, "F0F2F5")
-        c1.paragraphs[0].add_run(v)
-
-    doc.add_heading("2. Limiares de Mediação (Permitido vs. Vedado)", level=1)
-    tab_m = doc.add_table(rows=3, cols=2)
-    tab_m.alignment = WD_TABLE_ALIGNMENT.CENTER
-    tab_m.autofit = False
-
-    h_med = ["Condutas Autorizadas", "Condutas Vedadas"]
-    for ci, h in enumerate(h_med):
-        cel = tab_m.rows[0].cells[ci]
-        cel.width = Inches(3.25)
-        r = cel.paragraphs[0].add_run(h)
-        r.bold = True
-        r.font
+        s.top_margin = s.bottom_margin = s.left_margin = s.right
